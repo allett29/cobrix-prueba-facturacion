@@ -94,6 +94,16 @@ export function contrasenaProveedor(db: DatabaseSync): string {
 	return decryptSecret(String(row.contrasena_cifrada))
 }
 
+export function leerUltimaCorridaAutomaticaFecha(db: DatabaseSync): string | null {
+	const row = db.prepare('SELECT ultima_corrida_automatica_fecha FROM proveedor WHERE id = ?').get(PROVEEDOR_ID) as Row
+	const value = row.ultima_corrida_automatica_fecha
+	return value === null || value === undefined ? null : String(value)
+}
+
+export function marcarCorridaAutomaticaFecha(db: DatabaseSync, fecha: string): void {
+	db.prepare('UPDATE proveedor SET ultima_corrida_automatica_fecha = ? WHERE id = ?').run(fecha, PROVEEDOR_ID)
+}
+
 export function guardarProveedor(db: DatabaseSync, input: ProveedorEditable, nuevaContrasena?: string): void {
 	const actualizadoEn = ts()
 	const estados = JSON.stringify([...input.estadosImportables])

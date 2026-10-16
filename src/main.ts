@@ -16,6 +16,7 @@ process.env.SANDBOX_TODAY ??= '2026-10-13'
 const { DEFAULT_BILLING_API_DB, seedBillingApi } = await import('./billing-api/seed.ts')
 const { createBillingApiServer } = await import('./billing-api/server.ts')
 const { DEFAULT_COBRIX_DB, openCobrixDatabase } = await import('./cobrix/db.ts')
+const { iniciarCorridaAutomatica } = await import('./cobrix/corrida-automatica.ts')
 const { createApp } = await import('./web/app.ts')
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -40,6 +41,8 @@ const app = createApp({
 })
 app.listen(appPort, host)
 
+const detenerCorridaAutomatica = iniciarCorridaAutomatica(cobrix.db)
+
 console.log(`Panel Cobrix:             http://${host}:${appPort}`)
 console.log(`API del administrador:    ${simulatorUrl}/api/v1`)
 console.log(`Swagger:                  ${simulatorUrl}/docs`)
@@ -47,6 +50,7 @@ console.log(`Fecha de la prueba:       ${process.env.SANDBOX_TODAY}`)
 console.log(`Base Cobrix:              ${cobrixDbPath}`)
 
 const shutdown = (): void => {
+	detenerCorridaAutomatica()
 	app.close()
 	cobrix.db.close()
 	void billingApi.close().then(() => process.exit(0))

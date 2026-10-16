@@ -27,6 +27,7 @@ CREATE TABLE IF NOT EXISTS proveedor (
 	meses_consulta_pagadas INTEGER NOT NULL DEFAULT 7,
 	corrida_automatica_activa INTEGER NOT NULL DEFAULT 0,
 	corrida_automatica_hora TEXT,
+	ultima_corrida_automatica_fecha TEXT,
 	actualizado_en TEXT NOT NULL
 );
 

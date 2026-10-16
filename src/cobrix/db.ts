@@ -22,10 +22,18 @@ export function openCobrixDatabase(dbPath: string, seedOptions: CobrixSeedOption
 	const db = new DatabaseSync(dbPath)
 	db.exec('PRAGMA foreign_keys = ON')
 	db.exec(COBRIX_SCHEMA)
+	migrarEsquemaCobrix(db)
 	seedCobrixDefaults(db, seedOptions)
 	return { db, path: dbPath }
 }
 
 export function closeCobrixDatabase(handle: CobrixDatabase): void {
 	handle.db.close()
+}
+
+function migrarEsquemaCobrix(db: DatabaseSync): void {
+	const columnas = db.prepare('PRAGMA table_info(proveedor)').all() as { readonly name: string }[]
+	if (!columnas.some(c => c.name === 'ultima_corrida_automatica_fecha')) {
+		db.exec('ALTER TABLE proveedor ADD COLUMN ultima_corrida_automatica_fecha TEXT')
+	}
 }
