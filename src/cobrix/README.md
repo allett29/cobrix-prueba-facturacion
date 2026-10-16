@@ -1,7 +1,9 @@
 # Integración Cobrix
 
-Lado Cobrix: persistencia (`schema.ts`, `db.ts`), credenciales cifradas (`crypto.ts`), sync con el administrador ISP (por implementar en módulos siguientes).
+- **Persistencia:** `schema.ts`, `db.ts`, `repos.ts`, `data/cobrix.sqlite`
+- **Reglas §4:** `reglas/`
+- **Cliente HTTP ISP:** `cliente-isp.ts`
+- **Corridas:** `sync/importacion.ts`, `sync/pagadas.ts`
+- **Corrida automática:** `corrida-automatica.ts` (Caracas, import + pagadas)
 
-Diseño: [`docs/DECISIONES.md`](../../docs/DECISIONES.md).
-
-Conectar el panel en `src/web/app.ts`. Reglas en [`docs/ENUNCIADO.md`](../../docs/ENUNCIADO.md) §4; API en [`docs/API.md`](../../docs/API.md).
+Diseño: [`docs/DECISIONES.md`](../../docs/DECISIONES.md). Panel: [`src/web/app.ts`](../web/app.ts).

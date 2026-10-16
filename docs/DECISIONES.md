@@ -29,6 +29,12 @@ Este documento fija el criterio de ingeniería para la implementación. El enunc
 - UI muestra “contratos”; en BD `contrato_proveedor` delimita el bounded context.
 - Contadores de corrida en JSON (`corrida.contadores`), claves alineadas con la referencia de layout.
 
+## Corrida automática
+
+- Si está activa en `proveedor`, el proceso revisa cada ~30 s la hora en `America/Caracas`.
+- A la hora configurada ejecuta **importación** y luego **actualización de pagadas** (no simulación).
+- `proveedor.ultima_corrida_automatica_fecha` evita repetir el mismo día tras un reinicio.
+
 ## Errores y atomicidad
 
 - Fallo de autenticación o corrida abortada al inicio → `corrida` en `fallida` sin mutar dominio.
