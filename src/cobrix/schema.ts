@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS corrida (
 	proveedor_id INTEGER NOT NULL REFERENCES proveedor(id),
 	tipo TEXT NOT NULL CHECK (tipo IN ('importacion', 'actualizacion_pagadas')),
 	simulacion INTEGER NOT NULL DEFAULT 0,
-	estado TEXT NOT NULL CHECK (estado IN ('completada', 'fallida')),
+	estado TEXT NOT NULL CHECK (estado IN ('en_curso', 'completada', 'fallida')),
 	inicio_en TEXT NOT NULL,
 	fin_en TEXT,
 	duracion_ms INTEGER,
