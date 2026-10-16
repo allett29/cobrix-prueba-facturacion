@@ -71,11 +71,11 @@ describe('entorno de la prueba', () => {
 
 	it('el panel sirve las pantallas principales y el enunciado, sin pantalla de simulador', async () => {
 		for (const [path, needle] of [
-			['/', 'Por cobrar'],
-			['/clientes', 'Clientes'],
+			['/', 'Importar cuotas'],
+			['/clientes', 'Vence la más antigua'],
 			['/clientes/1', 'Cliente no encontrado'],
-			['/sincronizacion', 'Importar'],
-			['/configuracion', 'Guardar'],
+			['/sincronizacion', 'Borrar datos importados'],
+			['/configuracion', 'Guardar proveedor'],
 		] as const) {
 			const body = await (await fetch(`${panelBase}${path}`)).text()
 			assert.match(body, new RegExp(needle), path)

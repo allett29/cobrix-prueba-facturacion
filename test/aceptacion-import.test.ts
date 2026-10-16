@@ -11,7 +11,14 @@ import { after, before, describe, it } from 'node:test'
 import type { DatabaseSync } from 'node:sqlite'
 
 import { closeCobrixDatabase, openCobrixDatabase } from '../src/cobrix/db.ts'
-import { buscarClientePorIdentificacion, borrarDatosImportados, leerCorrida, totalesResumen } from '../src/cobrix/repos.ts'
+import {
+	borrarDatosImportados,
+	buscarClientePorIdentificacion,
+	guardarProveedor,
+	leerCorrida,
+	leerProveedor,
+	totalesResumen,
+} from '../src/cobrix/repos.ts'
 import { ejecutarImportacion } from '../src/cobrix/sync/importacion.ts'
 import { seedBillingApi } from '../src/billing-api/seed.ts'
 import { createBillingApiServer, type BillingApiServer } from '../src/billing-api/server.ts'
@@ -65,5 +72,51 @@ describe('aceptación — importación', () => {
 		const corrida2 = leerCorrida(db, segunda)!
 		assert.equal(corrida2.contadores.installmentsImported, 0)
 		assert.equal(corrida2.contadores.installmentsAlreadyImported, 42)
+	})
+
+	it('simulación aplica el tope de facturas igual que la importación real', async () => {
+		borrarDatosImportados(db)
+		const prov = leerProveedor(db)
+		guardarProveedor(db, {
+			nombreVisible: prov.nombreVisible,
+			urlApi: baseUrl,
+			usuario: prov.usuario,
+			estadosImportables: prov.estadosImportables,
+			ventanaMeses: prov.ventanaMeses,
+			maxCuotasRecientes: prov.maxCuotasRecientes,
+			diasGraciaCorte: prov.diasGraciaCorte,
+			topeFacturasCorrida: 5,
+			topeMontoCentavosCorrida: prov.topeMontoCentavosCorrida,
+			tiposDocumentoExcluidos: prov.tiposDocumentoExcluidos,
+			mesesConsultaPagadas: prov.mesesConsultaPagadas,
+			corridaAutomaticaActiva: prov.corridaAutomaticaActiva,
+			corridaAutomaticaHora: prov.corridaAutomaticaHora,
+		})
+
+		const simId = await ejecutarImportacion(db, true)
+		const sim = leerCorrida(db, simId)!
+		assert.equal(sim.contadores.installmentsWouldImport, 5)
+		assert.ok((sim.contadores.installmentsBlockedByLimit ?? 0) > 0)
+
+		const impId = await ejecutarImportacion(db, false)
+		const imp = leerCorrida(db, impId)!
+		assert.equal(imp.contadores.installmentsImported, 5)
+		assert.equal(totalesResumen(db).facturasAbiertas, 5)
+
+		guardarProveedor(db, {
+			nombreVisible: prov.nombreVisible,
+			urlApi: baseUrl,
+			usuario: prov.usuario,
+			estadosImportables: prov.estadosImportables,
+			ventanaMeses: prov.ventanaMeses,
+			maxCuotasRecientes: prov.maxCuotasRecientes,
+			diasGraciaCorte: prov.diasGraciaCorte,
+			topeFacturasCorrida: 500,
+			topeMontoCentavosCorrida: prov.topeMontoCentavosCorrida,
+			tiposDocumentoExcluidos: prov.tiposDocumentoExcluidos,
+			mesesConsultaPagadas: prov.mesesConsultaPagadas,
+			corridaAutomaticaActiva: prov.corridaAutomaticaActiva,
+			corridaAutomaticaHora: prov.corridaAutomaticaHora,
+		})
 	})
 })

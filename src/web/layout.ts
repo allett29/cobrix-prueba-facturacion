@@ -65,15 +65,49 @@ export function layout(input: { title: string; active: string; body: Raw; flash?
 <body>
 <div class="shell">
 	<aside class="side">
-		<div class="brand"><span class="mark">C</span><div><strong>Cobrix</strong><small>Prueba de facturación</small></div></div>
+		<div class="brand"><span class="mark">C</span><div><strong>Cobrix</strong><small>Sandbox de facturación</small></div></div>
 		<nav>${NAV.map(([href, label]) => `<a href="${href}"${input.active === href ? ' aria-current="page"' : ''}>${label}</a>`).join('')}</nav>
-		<div class="side-foot">${esc(input.company)}</div>
+		<div class="side-foot">
+			<div>${esc(input.company)}</div>
+			<div class="clock" aria-live="polite">
+				<span class="clock-label">Hora Caracas · corrida automática</span>
+				<strong id="cobrix-clock-caracas" class="clock-time">--:--:--</strong>
+				<small id="cobrix-clock-date" class="clock-date"></small>
+			</div>
+		</div>
 	</aside>
 	<main class="main">
 		${input.flash ? `<div class="flash ${input.flash.tone}" role="status">${esc(input.flash.text)}</div>` : ''}
 		${input.body.html}
 	</main>
 </div>
+<script>
+(function () {
+	const tz = 'America/Caracas'
+	const timeEl = document.getElementById('cobrix-clock-caracas')
+	const dateEl = document.getElementById('cobrix-clock-date')
+	if (!timeEl || !dateEl) return
+	function tick() {
+		const now = new Date()
+		timeEl.textContent = new Intl.DateTimeFormat('es-VE', {
+			timeZone: tz,
+			hour: '2-digit',
+			minute: '2-digit',
+			second: '2-digit',
+			hour12: false,
+		}).format(now)
+		dateEl.textContent = new Intl.DateTimeFormat('es-VE', {
+			timeZone: tz,
+			weekday: 'short',
+			day: 'numeric',
+			month: 'short',
+			year: 'numeric',
+		}).format(now)
+	}
+	tick()
+	setInterval(tick, 1000)
+})()
+</script>
 </body>
 </html>`
 }
@@ -108,7 +142,11 @@ a:hover { text-decoration: underline; }
 .side nav a { color: var(--fg); padding: 8px 10px; border-radius: 6px; font-weight: 500; }
 .side nav a:hover { background: var(--sunken); text-decoration: none; }
 .side nav a[aria-current="page"] { background: var(--primary-soft); color: var(--primary); }
-.side-foot { margin-top: auto; color: var(--muted); font-size: 12px; padding: 0 6px; }
+.side-foot { margin-top: auto; color: var(--muted); font-size: 12px; padding: 0 6px; display: grid; gap: 10px; }
+.side-foot .clock { padding-top: 10px; border-top: 1px solid var(--line); }
+.clock-label { display: block; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--muted); margin-bottom: 2px; }
+.clock-time { display: block; font-size: 17px; font-variant-numeric: tabular-nums; color: var(--fg); letter-spacing: 0.02em; }
+.clock-date { display: block; margin-top: 2px; font-size: 11px; color: var(--muted); }
 .main { padding: 24px 28px 60px; min-width: 0; display: grid; gap: 20px; align-content: start; max-width: 1280px; }
 h1 { font-size: 22px; margin: 0; }
 h2 { font-size: 16px; margin: 0; }
@@ -144,6 +182,12 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-sp
 .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 form.inline { display: inline; }
 .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 14px 18px; }
+.grid2-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; }
+table.counters th.key { font-family: var(--mono); font-size: 12px; font-weight: 500; }
+.stack-sm { display: grid; gap: 2px; }
+.stack-sm .sub { font-size: 12px; color: var(--muted); }
+.head-count { margin-left: auto; align-self: center; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.corrida-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; color: var(--muted); font-size: 13px; margin-top: 4px; }
 label.field { display: grid; gap: 5px; font-weight: 600; font-size: 13px; }
 label.field small { font-weight: 400; color: var(--muted); }
 input[type=text], input[type=password], input[type=number], input[type=search], input[type=url], select {

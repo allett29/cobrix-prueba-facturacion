@@ -23,6 +23,10 @@ import {
 	guardarProveedor,
 	iniciarCorrida,
 	leerEmpresa,
+	leerUltimaCorridaAutomaticaFecha,
+	marcarCorridaAutomaticaFecha,
+	registrarDetalleCorrida,
+	registrarHistorial,
 	leerProveedor,
 	siguienteNumeroFactura,
 	totalesResumen,
@@ -120,5 +124,35 @@ describe('repositorios Cobrix', () => {
 		assert.equal(totales.facturasAbiertas, 1)
 		assert.equal(totales.porCobrarCentavos, montoApiACentavos(20))
 		assert.equal(siguienteNumeroFactura(handle.db), numeroFacturaDesdeSecuencia(2))
+	})
+
+	it('borrar datos importados respeta claves foráneas', () => {
+		borrarDatosImportados(handle.db)
+		const cliente = crearCliente(handle.db, {
+			proveedorId: PROVEEDOR_ID,
+			identificacionNormalizada: 'V99999999',
+			identificacionMostrar: 'V-99999999',
+			tipoPersona: 'natural',
+			nombre: 'PRUEBA BORRAR',
+			correo: 'x@example.com',
+			telefono: '0412',
+			origen: 'test',
+		})
+		const corrida = iniciarCorrida(handle.db, { proveedorId: PROVEEDOR_ID, tipo: 'importacion', simulacion: true })
+		registrarDetalleCorrida(handle.db, {
+			corridaId: corrida.id,
+			idContratoIsp: 900101,
+			idCuotaProveedor: '7000001',
+			clienteId: cliente.id,
+			facturaId: null,
+			resultado: 'se_importaria',
+			detalle: 'test',
+			montoCentavos: 2000,
+		})
+		registrarHistorial(handle.db, { clienteId: cliente.id, tipo: 'cliente_creado', facturaId: null, payload: {} })
+		marcarCorridaAutomaticaFecha(handle.db, '2026-10-13')
+		assert.doesNotThrow(() => borrarDatosImportados(handle.db))
+		assert.equal(totalesResumen(handle.db).clientes, 0)
+		assert.equal(leerUltimaCorridaAutomaticaFecha(handle.db), null)
 	})
 })

@@ -295,6 +295,7 @@ export interface FilaDetalleCorrida {
 	readonly idContratoIsp: number | null
 	readonly idCuotaProveedor: string | null
 	readonly clienteId: number | null
+	readonly clienteNombre: string | null
 	readonly facturaId: number | null
 	readonly resultado: string
 	readonly detalle: string
@@ -303,14 +304,18 @@ export interface FilaDetalleCorrida {
 
 export function listarDetalleCorrida(db: DatabaseSync, corridaId: number): FilaDetalleCorrida[] {
 	const rows = db.prepare(`
-		SELECT * FROM corrida_detalle WHERE corrida_id = ?
-		ORDER BY id ASC
+		SELECT cd.*, c.nombre AS cliente_nombre
+		FROM corrida_detalle cd
+		LEFT JOIN cliente c ON c.id = cd.cliente_id
+		WHERE cd.corrida_id = ?
+		ORDER BY cd.id ASC
 	`).all(corridaId) as Row[]
 	return rows.map(row => ({
 		id: Number(row.id),
 		idContratoIsp: row.id_contrato_isp === null ? null : Number(row.id_contrato_isp),
 		idCuotaProveedor: row.id_cuota_proveedor === null ? null : String(row.id_cuota_proveedor),
 		clienteId: row.cliente_id === null ? null : Number(row.cliente_id),
+		clienteNombre: row.cliente_nombre === null ? null : String(row.cliente_nombre),
 		facturaId: row.factura_id === null ? null : Number(row.factura_id),
 		resultado: String(row.resultado),
 		detalle: String(row.detalle),
@@ -608,10 +613,12 @@ export function registrarHistorial(
 export function borrarDatosImportados(db: DatabaseSync): void {
 	db.exec(`
 		DELETE FROM historial_cliente;
+		DELETE FROM corrida_detalle;
 		DELETE FROM factura;
-		DELETE FROM corrida;
 		DELETE FROM contrato_proveedor;
+		DELETE FROM corrida;
 		DELETE FROM cliente;
+		UPDATE proveedor SET ultima_corrida_automatica_fecha = NULL WHERE id = 1;
 	`)
 }
 

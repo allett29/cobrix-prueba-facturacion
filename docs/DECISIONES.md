@@ -31,7 +31,7 @@ Este documento fija el criterio de ingeniería para la implementación. El enunc
 
 ## Corrida automática
 
-- Si está activa en `proveedor`, el proceso revisa cada ~30 s la hora en `America/Caracas`.
+- Si está activa en `proveedor`, el proceso revisa periódicamente la hora en `America/Caracas` (intervalo corto en local para pruebas; en producción 30–60 s o cron externo — `COBRIX_SCHEDULER_INTERVAL_MS`).
 - A la hora configurada ejecuta **importación** y luego **actualización de pagadas** (no simulación).
 - `proveedor.ultima_corrida_automatica_fecha` evita repetir el mismo día tras un reinicio.
 

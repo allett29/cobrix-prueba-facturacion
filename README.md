@@ -32,6 +32,7 @@ La fecha de la prueba queda fijada en **2026-10-13** (`SANDBOX_TODAY` en `npm st
 | `COBRIX_DB` | Ruta de `data/cobrix.sqlite` |
 | `COBRIX_MASTER_KEY` | Clave para cifrar la contraseña del proveedor (ver `src/cobrix/crypto.ts`) |
 | `SANDBOX_TODAY` | Fecha “hoy” del sandbox |
+| `COBRIX_SCHEDULER_INTERVAL_MS` | Intervalo del sondeo de corrida automática (default 5000; en producción suele usarse 30000+) |
 
 ## Flujo típico
 

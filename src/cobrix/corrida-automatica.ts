@@ -9,7 +9,14 @@ import { ejecutarImportacion } from './sync/importacion.ts'
 import { ejecutarActualizacionPagadas } from './sync/pagadas.ts'
 
 const TZ = 'America/Caracas'
-const INTERVALO_MS = 30_000
+
+/**
+ * Cada cuánto el proceso revisa si toca la corrida (solo compara HH:MM en Caracas).
+ * Default 5 s facilita pruebas locales (menos espera tras el minuto configurado).
+ * En producción suele bastar 30–60 s, o mejor un cron/worker externo en Caracas
+ * (un solo Node no es el patrón ideal de plataforma). Override: COBRIX_SCHEDULER_INTERVAL_MS.
+ */
+const INTERVALO_MS = Number(process.env.COBRIX_SCHEDULER_INTERVAL_MS ?? 5_000)
 
 export interface RelojCaracas {
 	readonly fecha: string

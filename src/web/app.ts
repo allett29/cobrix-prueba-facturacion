@@ -7,7 +7,6 @@ import type { DatabaseSync } from 'node:sqlite'
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 
 import { IspAuthError, IspClient } from '../cobrix/cliente-isp.ts'
-import { ESTADOS_CONTRATO_CONOCIDOS } from '../cobrix/reglas/contrato-individual.ts'
 import {
 	borrarDatosImportados,
 	contrasenaProveedor,
@@ -29,7 +28,8 @@ import {
 } from '../cobrix/repos.ts'
 import { ejecutarImportacion } from '../cobrix/sync/importacion.ts'
 import { ejecutarActualizacionPagadas } from '../cobrix/sync/pagadas.ts'
-import type { Corrida, ProveedorEditable } from '../cobrix/types.ts'
+import type { Corrida, Proveedor, ProveedorEditable } from '../cobrix/types.ts'
+import { currentPeriod, today } from '../shared/dates.ts'
 
 import { CONTRACT_STATUS_TONE, CSS, date, dateTime, esc, html, layout, period, pill, raw, usd, type Raw, type Tone } from './layout.ts'
 
@@ -40,6 +40,26 @@ export interface AppDeps {
 }
 
 const TIPOS_DOCUMENTO = ['V', 'E', 'J', 'G', 'P'] as const
+
+const ESTADOS_CONFIG = ['ACTIVO', 'RETIRADO', 'RECHAZADO', 'CORTESIA', 'CORTADO', 'ANULADO'] as const
+
+const DESTACADOS_IMPORT = [
+	'contractsObserved',
+	'installmentsImported',
+	'installmentsWouldImport',
+	'customersCreated',
+	'installmentsAlreadyImported',
+	'installmentsExcludedByStatus',
+] as const
+
+const DESTACADOS_PAGADAS = [
+	'invoicesChecked',
+	'invoicesMarkedPaid',
+	'invoicesWouldMarkPaid',
+	'invoicesPartiallyPaidAtIsp',
+	'invoicesStillOpen',
+	'invoicesUnknown',
+] as const
 
 const ETIQUETAS_CONTADORES_IMPORT: Record<string, string> = {
 	contractsObserved: 'Contratos observados',
@@ -106,7 +126,7 @@ export function createApp(deps: AppDeps): Server {
 		if (req.method === 'GET') {
 			if (path === '/app.css') return send(res, 200, `${CSS}\npre.doc { margin: 0; white-space: pre-wrap; font: 13.5px/1.6 var(--mono); color: var(--fg); max-width: 110ch; }`, 'text/css; charset=utf-8')
 			if (path === '/enunciado') return page('Enunciado', '', assignmentPage(deps))
-			if (path === '/') return page('Resumen', '/', resumenPage(db))
+			if (path === '/') return page('Resumen', '/', resumenPage(deps))
 			if (path === '/clientes') return page('Clientes', '/clientes', clientesPage(db, url.searchParams.get('q') ?? ''))
 			if (path === '/sincronizacion') return page('Sincronización', '/sincronizacion', syncPage(db))
 			if (path === '/configuracion') return page('Configuración', '/configuracion', configPage(db))
@@ -118,9 +138,10 @@ export function createApp(deps: AppDeps): Server {
 
 		if (req.method === 'POST') {
 			const form = await readForm(req)
-			if (path === '/configuracion') return postConfiguracion(db, res, form)
+			if (path === '/configuracion/empresa') return postConfiguracionEmpresa(db, res, form)
+			if (path === '/configuracion/proveedor') return postConfiguracionProveedor(db, res, form)
 			if (path === '/configuracion/probar') return postProbarConexion(db, res, form)
-			if (path === '/configuracion/borrar') return postBorrarImportados(db, res)
+			if (path === '/configuracion/borrar' || path === '/sincronizacion/borrar') return postBorrarImportados(db, res, path)
 			if (path === '/sincronizacion/importar') return postSync(db, res, 'importacion', false)
 			if (path === '/sincronizacion/importar/simular') return postSync(db, res, 'importacion', true)
 			if (path === '/sincronizacion/pagadas') return postSync(db, res, 'pagadas', false)
@@ -149,32 +170,38 @@ export function createApp(deps: AppDeps): Server {
 	})
 }
 
-function resumenPage(db: DatabaseSync): Raw {
+function resumenPage(deps: AppDeps): Raw {
+	const db = deps.db
 	const totales = totalesResumen(db)
 	const proveedor = leerProveedor(db)
 	const corridas = listarCorridas(db, 8)
 	return html`
 		<div class="head">
-			<div><h1>Resumen</h1><p>Vista general de la integración con el administrador de facturas.</p></div>
-			<div class="actions">${accionesSync()}</div>
+			<div>
+				<h1>Resumen</h1>
+				<p>Prototipo de integración Cobrix con la API del administrador de facturas (SQLite local, reglas de sync del ISP).</p>
+			</div>
+			<div class="actions">${accionesResumen()}</div>
 		</div>
 		<div class="tiles">
-			<div class="tile"><span>Clientes</span><strong>${totales.clientes}</strong></div>
-			<div class="tile"><span>Contratos</span><strong>${totales.contratos}</strong></div>
+			<div class="tile"><span>Clientes importados</span><strong>${totales.clientes}</strong></div>
+			<div class="tile"><span>Contratos espejados</span><strong>${totales.contratos}</strong></div>
 			<div class="tile"><span>Facturas abiertas</span><strong>${totales.facturasAbiertas}</strong></div>
 			<div class="tile"><span>Facturas pagadas</span><strong>${totales.facturasPagadas}</strong></div>
 			<div class="tile"><span>Por cobrar</span><strong>${raw(usd(totales.porCobrarCentavos))}</strong></div>
 		</div>
 		<section class="card">
-			<header><h2>Proveedor</h2><a href="/configuracion">Configurar</a></header>
+			<header><h2>Proveedor</h2><a href="/configuracion">Editar configuración</a></header>
 			<div class="body">
 				<dl class="facts">
-					<dt>Nombre</dt><dd>${proveedor.nombreVisible}</dd>
-					<dt>API</dt><dd class="mono">${proveedor.urlApi}</dd>
-					<dt>Corrida automática</dt>
-					<dd>${proveedor.corridaAutomaticaActiva
-						? html`${pill('Activa', 'ok')} · ${proveedor.corridaAutomaticaHora ?? '—'} (Caracas)`
-						: pill('Inactiva', 'mute')}</dd>
+					<dt>Proveedor</dt><dd>${proveedor.nombreVisible}</dd>
+					<dt>URL de la API</dt><dd class="mono">${proveedor.urlApi}</dd>
+					<dt>Documentación de la API</dt>
+					<dd><a href="${deps.simulatorUrl}/docs" target="_blank" rel="noopener">Swagger</a> · <a href="${deps.simulatorUrl}/openapi.json" target="_blank" rel="noopener">openapi.json</a></dd>
+					<dt>Estados que se importan</dt><dd>${proveedor.estadosImportables.join(', ')}</dd>
+					<dt>Ventana</dt><dd>${textoVentanaProveedor(proveedor)}</dd>
+					<dt>Corrida automática</dt><dd>${textoCorridaAutomatica(proveedor)}</dd>
+					<dt>Fecha del sandbox</dt><dd>${etiquetaFechaSandbox()}</dd>
 				</dl>
 			</div>
 		</section>
@@ -188,18 +215,22 @@ function clientesPage(db: DatabaseSync, busqueda: string): Raw {
 	const filas = listarClientesResumen(db, busqueda)
 	return html`
 		<div class="head">
-			<div><h1>Clientes</h1><p>Importados desde el administrador, agrupados por titular.</p></div>
-			<form class="search" method="get" action="/clientes">
-				<input type="search" name="q" value="${busqueda}" placeholder="Nombre, cédula o RIF" />
-				<button type="submit" class="btn">Buscar</button>
-			</form>
+			<div>
+				<h1>Clientes</h1>
+				<p>Clientes creados por el sync del administrador. Un cliente por cédula o RIF: si el titular tiene varios contratos, se agrupan aquí.</p>
+			</div>
+			<span class="head-count">${filas.length} clientes</span>
 		</div>
+		<form class="search" method="get" action="/clientes">
+			<input type="search" name="q" value="${busqueda}" placeholder="Nombre, cédula o RIF" />
+			<button type="submit" class="btn">Buscar</button>
+		</form>
 		<section class="card">
 			<div class="body table-wrap">
 				<table>
 					<thead><tr>
 						<th>Cliente</th><th>Documento</th><th>Tipo</th><th class="num">Contratos</th>
-						<th class="num">Abiertas</th><th class="num">Pagadas</th><th class="num">Deuda</th><th>Vencimiento + antiguo</th>
+						<th class="num">Abiertas</th><th class="num">Pagadas</th><th class="num">Deuda</th><th>Vence la más antigua</th>
 					</tr></thead>
 					<tbody>${filas.length === 0
 						? html`<tr><td colspan="8" class="muted">Sin clientes${busqueda ? ' para esta búsqueda' : ''}.</td></tr>`
@@ -211,7 +242,8 @@ function clientesPage(db: DatabaseSync, busqueda: string): Raw {
 
 function filaCliente(fila: FilaClienteResumen): Raw {
 	const { cliente: c } = fila
-	const tipo = c.tipoPersona === 'juridico' ? 'Jurídica' : 'Natural'
+	const tipo = c.tipoPersona === 'juridico' ? 'Jurídico' : 'Natural'
+	const vence = fila.deudaCentavos === 0 || !fila.vencimientoAntiguo ? 'Al día' : date(fila.vencimientoAntiguo)
 	return html`<tr>
 		<td><a href="/clientes/${c.id}">${c.nombre}</a></td>
 		<td class="mono">${c.identificacionMostrar}</td>
@@ -220,7 +252,7 @@ function filaCliente(fila: FilaClienteResumen): Raw {
 		<td class="num">${fila.facturasAbiertas}</td>
 		<td class="num">${fila.facturasPagadas}</td>
 		<td class="num">${raw(usd(fila.deudaCentavos))}</td>
-		<td>${date(fila.vencimientoAntiguo)}</td>
+		<td>${vence}</td>
 	</tr>`
 }
 
@@ -235,63 +267,68 @@ function expedientePage(db: DatabaseSync, clienteId: number): Raw {
 	const abiertas = facturas.filter(f => f.estado === 'abierta')
 	const pagadas = facturas.filter(f => f.estado === 'pagada')
 	const deuda = abiertas.reduce((sum, f) => sum + f.saldoCentavos, 0)
+	const subtitulo = `${cliente.tipoPersona === 'juridico' ? 'Persona jurídica' : 'Persona natural'} · ${cliente.identificacionMostrar}`
 	return html`
+		<p><a href="/clientes">← Clientes</a></p>
 		<div class="head">
-			<div><h1>${cliente.nombre}</h1><p class="mono">${cliente.identificacionMostrar} · ${cliente.tipoPersona === 'juridico' ? 'Persona jurídica' : 'Persona natural'}</p></div>
-			<a href="/clientes" class="btn">← Clientes</a>
+			<div><h1>${cliente.nombre}</h1><p>${subtitulo}</p></div>
 		</div>
 		<div class="tiles">
+			<div class="tile"><span>Deuda abierta</span><strong>${raw(usd(deuda))}</strong></div>
+			<div class="tile"><span>Facturas abiertas</span><strong>${abiertas.length}</strong></div>
+			<div class="tile"><span>Facturas pagadas</span><strong>${pagadas.length}</strong></div>
 			<div class="tile"><span>Contratos</span><strong>${contratos.length}</strong></div>
-			<div class="tile"><span>Abiertas</span><strong>${abiertas.length}</strong></div>
-			<div class="tile"><span>Pagadas</span><strong>${pagadas.length}</strong></div>
-			<div class="tile"><span>Deuda</span><strong>${raw(usd(deuda))}</strong></div>
+		</div>
+		<div class="grid2">
+			<section class="card">
+				<header><h2>Datos del cliente</h2></header>
+				<div class="body">
+					<dl class="facts">
+						<dt>ID externo</dt><dd class="mono">${cliente.identificacionNormalizada}</dd>
+						<dt>Documento</dt><dd class="mono">${cliente.identificacionMostrar}</dd>
+						<dt>Correo</dt><dd>${cliente.correo || '—'}</dd>
+						<dt>Teléfono</dt><dd>${cliente.telefono || '—'}</dd>
+						<dt>Origen</dt><dd>${cliente.origen}</dd>
+						<dt>Creado</dt><dd>${dateTime(cliente.creadoEn)}</dd>
+					</dl>
+				</div>
+			</section>
+			<section class="card">
+				<header><h2>Contratos en el administrador</h2></header>
+				<div class="body table-wrap">
+					<table>
+						<thead><tr><th>Contrato</th><th>Estado</th><th>Plan</th><th>Sucursal</th></tr></thead>
+						<tbody>${contratos.map(c => html`<tr>
+							<td><div class="stack-sm"><strong class="mono">${c.idContratoIsp}</strong><span class="sub">${c.direccion}</span></div></td>
+							<td>${pill(c.estado, CONTRACT_STATUS_TONE[c.estado] ?? 'warn')}</td>
+							<td>${c.planNombre}<br /><span class="muted">${raw(usd(c.precioMesCentavos))}/mes</span></td>
+							<td class="mono">${c.sucursalSigla}</td>
+						</tr>`)}</tbody>
+					</table>
+				</div>
+			</section>
 		</div>
 		<section class="card">
-			<header><h2>Datos del cliente</h2></header>
-			<div class="body">
-				<dl class="facts">
-					<dt>Correo</dt><dd>${cliente.correo || '—'}</dd>
-					<dt>Teléfono</dt><dd>${cliente.telefono || '—'}</dd>
-					<dt>Origen</dt><dd>${cliente.origen}</dd>
-					<dt>Registrado</dt><dd>${dateTime(cliente.creadoEn)}</dd>
-				</dl>
-			</div>
-		</section>
-		<section class="card">
-			<header><h2>Contratos en el administrador</h2></header>
-			<div class="body table-wrap">
-				<table>
-					<thead><tr><th>ID ISP</th><th>Código</th><th>Estado</th><th>Plan</th><th>Sucursal</th><th class="num">Precio/mes</th></tr></thead>
-					<tbody>${contratos.map(c => html`<tr>
-						<td class="mono">${c.idContratoIsp}</td>
-						<td class="mono">${c.codigo}</td>
-						<td>${pill(c.estado, CONTRACT_STATUS_TONE[c.estado] ?? 'warn')}</td>
-						<td>${c.planNombre} <span class="muted mono">${c.planCodigo}</span></td>
-						<td>${c.sucursalNombre} (${c.sucursalSigla})</td>
-						<td class="num">${raw(usd(c.precioMesCentavos))}</td>
-					</tr>`)}</tbody>
-				</table>
-			</div>
-		</section>
-		<section class="card">
-			<header><h2>Facturas</h2></header>
+			<header><h2>Facturas</h2><span class="muted">Una factura por cuota del administrador</span></header>
 			<div class="body table-wrap">
 				<table>
 					<thead><tr>
-						<th>Número</th><th>Cuota ISP</th><th>Periodo</th><th>Vencimiento</th><th>Corte</th>
+						<th>Factura</th><th>Cuota en el administrador</th><th>Periodo</th><th>Descripción</th><th>Vence</th><th>Corte</th>
 						<th class="num">Total</th><th class="num">Saldo</th><th>Estado</th>
 					</tr></thead>
 					<tbody>${facturas.map(f => html`<tr>
 						<td class="mono">${f.numero}</td>
-						<td class="mono">${f.idCuotaProveedor}</td>
+						<td><div class="stack-sm"><span class="mono">${f.idCuotaProveedor}</span><span class="sub">contrato ${f.idContratoIsp}</span></div></td>
 						<td>${period(f.periodo)}</td>
+						<td>${f.descripcion}</td>
 						<td>${date(f.vencimiento)}</td>
 						<td>${date(f.corte)}</td>
 						<td class="num">${raw(usd(f.totalCentavos))}</td>
 						<td class="num">${raw(usd(f.saldoCentavos))}</td>
-						<td>${f.estado === 'pagada' ? pill('Pagada', 'ok') : pill('Abierta', 'warn')}</td>
+						<td>${estadoFacturaCelda(f)}</td>
 					</tr>`)}</tbody>
 				</table>
+				<p class="note">El vencimiento es el primer día del período, como en el sync real de Cobrix: el administrador no entrega un vencimiento por cuota. El corte suma los días de gracia configurados.</p>
 			</div>
 		</section>
 		<section class="card">
@@ -301,8 +338,7 @@ function expedientePage(db: DatabaseSync, clienteId: number): Raw {
 					? html`<p class="muted">Sin eventos todavía.</p>`
 					: html`<ul class="timeline">${historial.map(ev => html`<li>
 						<time>${dateTime(ev.ocurridoEn)}</time>
-						<div><strong>${ETIQUETAS_HISTORIAL[ev.tipo] ?? ev.tipo}</strong>
-							${ev.facturaId ? html` · factura #${ev.facturaId}` : ''}
+						<div><strong>${tituloHistorial(ev)}</strong>
 							${ev.detalleHistorial ? html`<div class="muted">${ev.detalleHistorial}</div>` : ''}
 						</div>
 					</li>`)}</ul>`}
@@ -314,14 +350,40 @@ function syncPage(db: DatabaseSync): Raw {
 	const corridas = listarCorridas(db, 50)
 	return html`
 		<div class="head">
-			<div><h1>Sincronización</h1><p>Importación de cuotas pendientes y actualización de pagadas.</p></div>
+			<div>
+				<h1>Sincronización</h1>
+				<p>La importación lee cada contrato del administrador y crea una factura abierta por cuota pendiente. La actualización de pagadas consulta el libro de cuotas del administrador y marca pagadas las que el ISP ya cobró.</p>
+			</div>
+		</div>
+		<div class="grid2-cards">
+			<section class="card">
+				<header><h2>Importar cuotas</h2></header>
+				<div class="body">
+					<p class="muted">Recorre todos los contratos y aplica estados, ventana, límite de recientes y topes de la configuración.</p>
+					<div class="actions">
+						<form method="post" action="/sincronizacion/importar/simular" class="inline"><button type="submit" class="btn">Simular importación</button></form>
+						<form method="post" action="/sincronizacion/importar" class="inline"><button type="submit" class="btn primary">Importar</button></form>
+					</div>
+				</div>
+			</section>
+			<section class="card">
+				<header><h2>Actualizar facturas pagadas</h2></header>
+				<div class="body">
+					<p class="muted">Para cada factura abierta lee el libro del contrato. Solo marca pagada con saldo 0 y evidencia; los abonos parciales se informan.</p>
+					<div class="actions">
+						<form method="post" action="/sincronizacion/pagadas/simular" class="inline"><button type="submit" class="btn">Simular actualización</button></form>
+						<form method="post" action="/sincronizacion/pagadas" class="inline"><button type="submit" class="btn primary">Actualizar pagadas</button></form>
+					</div>
+				</div>
+			</section>
 		</div>
 		<section class="card">
-			<header><h2>Acciones</h2></header>
-			<div class="body actions">${accionesSync()}</div>
-		</section>
-		<section class="card">
-			<header><h2>Historial de corridas</h2></header>
+			<header>
+				<h2>Corridas</h2>
+				<form method="post" action="/sincronizacion/borrar" class="inline" onsubmit="return confirm('¿Borrar todos los datos importados?')">
+					<button type="submit" class="btn">Borrar datos importados</button>
+				</form>
+			</header>
 			<div class="body table-wrap">${tablaCorridas(corridas)}</div>
 		</section>`
 }
@@ -333,33 +395,31 @@ function corridaPage(db: DatabaseSync, corridaId: number): Raw {
 	}
 	const detalle = listarDetalleCorrida(db, corridaId)
 	const etiquetas = corrida.tipo === 'importacion' ? ETIQUETAS_CONTADORES_IMPORT : ETIQUETAS_CONTADORES_PAGADAS
+	const destacados = corrida.tipo === 'importacion' ? DESTACADOS_IMPORT : DESTACADOS_PAGADAS
+	const duracion = corrida.duracionMs === null ? '—' : `${(corrida.duracionMs / 1000).toFixed(1)} s`
 	return html`
+		<p><a href="/sincronizacion">← Sincronización</a></p>
 		<div class="head">
 			<div>
-				<h1>${tituloCorrida(corrida)} ${corrida.simulacion ? pill('Simulación', 'info') : ''}</h1>
-				<p>${corrida.resumen}</p>
+				<h1>${tituloCorrida(corrida)} #${corrida.id}</h1>
+				<div class="corrida-meta">
+					<span>${dateTime(corrida.inicioEn)}</span>
+					${pillEstadoCorrida(corrida)}
+					<span>${duracion}</span>
+					${corrida.simulacion ? pill('Simulación', 'info') : ''}
+				</div>
+				<p class="muted">${corrida.resumen}</p>
 			</div>
-			<a href="/sincronizacion" class="btn">← Sincronización</a>
 		</div>
+		<div class="tiles">${destacados.map(key => html`
+			<div class="tile"><span>${etiquetas[key] ?? key}</span><strong>${corrida.contadores[key] ?? 0}</strong></div>
+		`)}</div>
 		<section class="card">
-			<header><h2>Resumen</h2>${pillEstadoCorrida(corrida)}</header>
-			<div class="body">
-				<dl class="facts">
-					<dt>Inicio</dt><dd>${dateTime(corrida.inicioEn)}</dd>
-					<dt>Fin</dt><dd>${corrida.finEn ? dateTime(corrida.finEn) : '—'}</dd>
-					<dt>Duración</dt><dd>${corrida.duracionMs === null ? '—' : `${(corrida.duracionMs / 1000).toFixed(1)} s`}</dd>
-					${corrida.error ? html`<dt>Error</dt><dd class="muted">${corrida.error}</dd>` : ''}
-				</dl>
-			</div>
+			<header><h2>Contadores</h2><span class="muted">Mismos nombres que en Cobrix</span></header>
+			<div class="body table-wrap">${tablaContadoresCorrida(corrida.contadores, etiquetas)}</div>
 		</section>
 		<section class="card">
-			<header><h2>Contadores</h2></header>
-			<div class="body tiles">${Object.entries(corrida.contadores).map(([key, val]) => html`
-				<div class="tile"><span>${etiquetas[key] ?? key}</span><strong>${val}</strong></div>
-			`)}</div>
-		</section>
-		<section class="card">
-			<header><h2>Detalle por cuota</h2><span class="muted">${detalle.length} filas</span></header>
+			<header><h2>Detalle</h2><span class="muted">${detalle.length} filas</span></header>
 			<div class="body table-wrap">${tablaDetalleCorrida(detalle)}</div>
 		</section>`
 }
@@ -369,106 +429,150 @@ function configPage(db: DatabaseSync): Raw {
 	const proveedor = leerProveedor(db)
 	const estadosSet = new Set(proveedor.estadosImportables)
 	const exclSet = new Set(proveedor.tiposDocumentoExcluidos)
+	const ventanaVal = proveedor.ventanaMeses === null ? '' : String(proveedor.ventanaMeses)
 	return html`
-		<div class="head"><div><h1>Configuración</h1><p>Empresa, proveedor y reglas de importación.</p></div></div>
-		<form method="post" action="/configuracion" class="grid2">
+		<div class="head">
+			<div>
+				<h1>Configuración</h1>
+				<p>Datos de la empresa y del administrador de facturas, con las mismas opciones del formulario «Configurar proveedor» de Cobrix.</p>
+			</div>
+		</div>
+		<form method="post" action="/configuracion/empresa">
 			<section class="card">
 				<header><h2>Empresa</h2></header>
 				<div class="body grid2">
 					<label class="field">Nombre<input type="text" name="empresa_nombre" required value="${empresa.nombre}" /></label>
 					<label class="field">RIF<input type="text" name="empresa_rif" required value="${empresa.rif}" /></label>
-					<label class="field" style="grid-column: 1 / -1">Correo de cobranza<input type="text" name="empresa_correo" required value="${empresa.correoCobranza}" /></label>
+					<label class="field">Correo de cobranza<input type="text" name="empresa_correo" required value="${empresa.correoCobranza}" /></label>
+					<label class="field">Zona horaria y moneda<input type="text" readonly value="America/Caracas · USD" /></label>
 				</div>
+				<div class="body"><button type="submit" class="btn primary">Guardar empresa</button></div>
 			</section>
+		</form>
+		<form method="post" action="/configuracion/proveedor">
 			<section class="card">
-				<header><h2>Proveedor</h2></header>
+				<header><h2>Administrador de facturas</h2>
+					<button type="submit" formaction="/configuracion/probar" class="btn">Probar conexión</button>
+				</header>
 				<div class="body grid2">
 					<label class="field">Nombre visible<input type="text" name="prov_nombre" required value="${proveedor.nombreVisible}" /></label>
-					<label class="field">URL de la API<input type="url" name="prov_url" required value="${proveedor.urlApi}" /></label>
-					<label class="field">Usuario<input type="text" name="prov_usuario" required value="${proveedor.usuario}" autocomplete="username" /></label>
-					<label class="field">Contraseña<small>Dejar vacío para no cambiar</small><input type="password" name="prov_contrasena" autocomplete="current-password" /></label>
-				</div>
-			</section>
-			<section class="card" style="grid-column: 1 / -1">
-				<header><h2>Importación y corridas</h2></header>
-				<div class="body grid2">
-					<fieldset><legend>Estados de contrato importables</legend>
-						${[...ESTADOS_CONTRATO_CONOCIDOS].map(est => html`
+					<label class="field">URL de la API<small>Con o sin /api/v1</small><input type="url" name="prov_url" required value="${proveedor.urlApi}" /></label>
+					<label class="field">Usuario o correo<input type="text" name="prov_usuario" required value="${proveedor.usuario}" autocomplete="username" /></label>
+					<label class="field">Contraseña<small>Déjala vacía para conservar la actual</small><input type="password" name="prov_contrasena" autocomplete="current-password" /></label>
+					<fieldset style="grid-column: 1 / -1"><legend>Estados de contrato que se importan</legend>
+						${ESTADOS_CONFIG.map(est => html`
 							<label><input type="checkbox" name="estados" value="${est}" ${estadosSet.has(est) ? 'checked' : ''} /> ${est}</label>
 						`)}
 					</fieldset>
-					<fieldset><legend>Excluir tipos de documento</legend>
+					<label class="field">Ventana de importación<small>Solo cuotas desde el mes actual menos N meses</small>
+						<select name="ventana_meses">
+							<option value="" ${ventanaVal === '' ? 'selected' : ''}>Sin ventana</option>
+							${[3, 6, 9, 12].map(n => html`<option value="${n}" ${ventanaVal === String(n) ? 'selected' : ''}>${n} meses</option>`)}
+						</select>
+					</label>
+					<label class="field">Máx. cuotas recientes por contrato<small>Vacío = todas (1 a 60)</small>
+						<input type="number" name="max_cuotas" min="1" max="60" value="${proveedor.maxCuotasRecientes ?? ''}" /></label>
+					<label class="field">Días de gracia para el corte<small>Corte = vencimiento + días (0 a 60)</small>
+						<input type="number" name="dias_gracia" min="0" max="60" required value="${proveedor.diasGraciaCorte}" /></label>
+					<label class="field">Ventana de consulta de pagadas (meses)<small>Por defecto 7</small>
+						<input type="number" name="meses_pagadas" min="1" required value="${proveedor.mesesConsultaPagadas}" /></label>
+					<label class="field">Tope de facturas nuevas por corrida<input type="number" name="tope_facturas" min="1" required value="${proveedor.topeFacturasCorrida}" /></label>
+					<label class="field">Tope de monto nuevo por corrida (USD)<input type="number" name="tope_monto_usd" min="0" step="0.01" required value="${(proveedor.topeMontoCentavosCorrida / 100).toFixed(2)}" /></label>
+					<fieldset style="grid-column: 1 / -1"><legend>Excluir por tipo de documento</legend>
 						${TIPOS_DOCUMENTO.map(t => html`
 							<label><input type="checkbox" name="tipos_excluidos" value="${t}" ${exclSet.has(t) ? 'checked' : ''} /> ${t}</label>
 						`)}
 					</fieldset>
-					<label class="field">Ventana (meses)<small>Vacío = sin límite</small>
-						<input type="number" name="ventana_meses" min="1" value="${proveedor.ventanaMeses ?? ''}" /></label>
-					<label class="field">Máx. cuotas recientes<small>Vacío = sin límite</small>
-						<input type="number" name="max_cuotas" min="1" value="${proveedor.maxCuotasRecientes ?? ''}" /></label>
-					<label class="field">Días de gracia (corte)<input type="number" name="dias_gracia" min="0" required value="${proveedor.diasGraciaCorte}" /></label>
-					<label class="field">Meses consulta pagadas<input type="number" name="meses_pagadas" min="1" required value="${proveedor.mesesConsultaPagadas}" /></label>
-					<label class="field">Tope facturas / corrida<input type="number" name="tope_facturas" min="1" required value="${proveedor.topeFacturasCorrida}" /></label>
-					<label class="field">Tope monto / corrida (USD)<input type="number" name="tope_monto_usd" min="0" step="0.01" required value="${(proveedor.topeMontoCentavosCorrida / 100).toFixed(2)}" /></label>
-					<label class="field"><input type="checkbox" name="corrida_auto" value="1" ${proveedor.corridaAutomaticaActiva ? 'checked' : ''} /> Corrida automática diaria</label>
-					<label class="field">Hora (Caracas)<input type="time" name="corrida_hora" value="${proveedor.corridaAutomaticaHora ?? '06:00'}" /></label>
+					<div class="field" style="grid-column: 1 / -1">
+						<fieldset>
+							<legend>Corrida automática</legend>
+							<label><input type="checkbox" name="corrida_auto" value="1" ${proveedor.corridaAutomaticaActiva ? 'checked' : ''} /> Importar y actualizar pagadas una vez al día</label>
+							<label class="field" style="display:inline-grid; margin-top:8px">a las <input type="time" name="corrida_hora" value="${proveedor.corridaAutomaticaHora ?? '06:00'}" style="width:auto" /> (Caracas)</label>
+						</fieldset>
+					</div>
 				</div>
+				<p class="note">Fijo para este proveedor, como en Cobrix: solo cuotas pendientes, vencimiento del proveedor y corrida automática opcional. Reloj lateral = Caracas; una ejecución por día.</p>
 				<div class="body actions">
-					<button type="submit" class="btn primary">Guardar</button>
-					<button type="submit" formaction="/configuracion/probar" class="btn">Probar conexión</button>
+					<button type="submit" class="btn primary">Guardar proveedor</button>
+					<span class="muted">Última modificación: ${dateTime(proveedor.actualizadoEn)}</span>
 				</div>
 			</section>
-		</form>
-		<section class="card">
-			<header><h2>Zona de prueba</h2></header>
-			<div class="body">
-				<p class="note">Borra clientes, facturas y corridas importadas. La configuración se conserva.</p>
-				<form method="post" action="/configuracion/borrar" class="actions" onsubmit="return confirm('¿Borrar todos los datos importados?')">
-					<button type="submit" class="btn">Borrar datos importados</button>
-				</form>
-			</div>
-		</section>`
+		</form>`
 }
 
-function accionesSync(): Raw {
+function accionesResumen(): Raw {
 	return html`
-		<form method="post" action="/sincronizacion/importar" class="inline"><button type="submit" class="btn primary">Importar</button></form>
-		<form method="post" action="/sincronizacion/importar/simular" class="inline"><button type="submit" class="btn">Simular importación</button></form>
-		<form method="post" action="/sincronizacion/pagadas" class="inline"><button type="submit" class="btn primary">Actualizar pagadas</button></form>
-		<form method="post" action="/sincronizacion/pagadas/simular" class="inline"><button type="submit" class="btn">Simular actualización</button></form>`
+		<form method="post" action="/sincronizacion/importar" class="inline"><button type="submit" class="btn primary">Importar cuotas</button></form>
+		<form method="post" action="/sincronizacion/pagadas" class="inline"><button type="submit" class="btn">Actualizar pagadas</button></form>`
 }
 
 function tablaCorridas(corridas: readonly Corrida[]): Raw {
 	if (corridas.length === 0) return html`<p class="muted">Aún no hay corridas.</p>`
 	return html`<table>
-		<thead><tr><th>ID</th><th>Tipo</th><th>Inicio</th><th>Estado</th><th>Resultado</th><th></th></tr></thead>
+		<thead><tr><th>#</th><th>Tipo</th><th>Inicio</th><th>Estado</th><th>Resultado</th></tr></thead>
 		<tbody>${corridas.map(c => html`<tr>
-			<td class="mono">${c.id}</td>
-			<td>${tituloCorrida(c)}${c.simulacion ? html` ${pill('Sim', 'info')}` : ''}</td>
+			<td class="mono"><a href="/sincronizacion/${c.id}">${c.id}</a></td>
+			<td>${tituloCorrida(c)}${c.simulacion ? html` ${pill('Simulación', 'info')}` : ''}</td>
 			<td>${dateTime(c.inicioEn)}</td>
 			<td>${pillEstadoCorrida(c)}</td>
 			<td class="muted">${c.resumen}</td>
-			<td><a href="/sincronizacion/${c.id}" class="btn small">Detalle</a></td>
 		</tr>`)}</tbody>
 	</table>`
+}
+
+function tablaContadoresCorrida(contadores: Record<string, number>, etiquetas: Record<string, string>): Raw {
+	const entries = Object.entries(contadores)
+	if (entries.length === 0) return html`<p class="muted">Sin contadores.</p>`
+	return html`<table class="counters">
+		<thead><tr><th>Contador</th><th>Clave</th><th class="num">Valor</th></tr></thead>
+		<tbody>${entries.map(([key, val]) => html`<tr>
+			<td>${etiquetas[key] ?? key}</td>
+			<td class="key mono">${key}</td>
+			<td class="num">${val}</td>
+		</tr>`)}</tbody>
+	</table>`
+}
+
+const ETIQUETAS_RESULTADO_DETALLE: Record<string, { readonly label: string; readonly tone: Tone }> = {
+	importada: { label: 'Importada', tone: 'ok' },
+	se_importaria: { label: 'Se importaría', tone: 'info' },
+	marcada_pagada: { label: 'Marcada pagada', tone: 'ok' },
+	se_marcaria_pagada: { label: 'Se marcaría pagada', tone: 'info' },
+	sigue_abierta: { label: 'Sigue pendiente', tone: 'mute' },
+	abono_parcial_isp: { label: 'Abono parcial en el administrador', tone: 'warn' },
+	reabierta: { label: 'Reabierta', tone: 'warn' },
+	ya_importada: { label: 'Ya importada', tone: 'mute' },
+	frenada_tope: { label: 'Frenada por tope', tone: 'warn' },
 }
 
 function tablaDetalleCorrida(filas: readonly FilaDetalleCorrida[]): Raw {
 	if (filas.length === 0) return html`<p class="muted">Sin filas de detalle.</p>`
 	return html`<table>
 		<thead><tr>
-			<th>Contrato</th><th>Cuota</th><th>Cliente</th><th>Factura</th><th>Resultado</th><th>Detalle</th><th class="num">Monto</th>
+			<th>Contrato</th><th>Cuota</th><th>Cliente</th><th>Resultado</th><th>Detalle</th><th class="num">Monto</th>
 		</tr></thead>
 		<tbody>${filas.map(r => html`<tr>
 			<td class="mono">${r.idContratoIsp ?? '—'}</td>
 			<td class="mono">${r.idCuotaProveedor ?? '—'}</td>
-			<td>${r.clienteId ? html`<a href="/clientes/${r.clienteId}">${r.clienteId}</a>` : '—'}</td>
-			<td class="mono">${r.facturaId ?? '—'}</td>
-			<td>${r.resultado}</td>
+			<td>${celdaClienteDetalle(r)}</td>
+			<td>${pillResultadoDetalle(r.resultado)}</td>
 			<td>${r.detalle}</td>
 			<td class="num">${r.montoCentavos === null ? '—' : raw(usd(r.montoCentavos))}</td>
 		</tr>`)}</tbody>
 	</table>`
+}
+
+function celdaClienteDetalle(fila: FilaDetalleCorrida): Raw {
+	if (fila.clienteId && fila.clienteNombre) {
+		return html`<a href="/clientes/${fila.clienteId}">${fila.clienteNombre}</a>`
+	}
+	return html`<span class="muted">—</span>`
+}
+
+function pillResultadoDetalle(resultado: string): Raw {
+	const known = ETIQUETAS_RESULTADO_DETALLE[resultado]
+	if (known) return pill(known.label, known.tone)
+	return pill(resultado.replaceAll('_', ' '), 'mute')
 }
 
 function tituloCorrida(c: Corrida): string {
@@ -492,16 +596,20 @@ function assignmentPage(deps: AppDeps): Raw {
 		<section class="card"><div class="body"><pre class="doc">${text}</pre></div></section>`
 }
 
-async function postConfiguracion(db: DatabaseSync, res: ServerResponse, form: URLSearchParams): Promise<void> {
+function postConfiguracionEmpresa(db: DatabaseSync, res: ServerResponse, form: URLSearchParams): void {
 	guardarEmpresa(db, {
 		nombre: requireField(form, 'empresa_nombre'),
 		rif: requireField(form, 'empresa_rif'),
 		correoCobranza: requireField(form, 'empresa_correo'),
 	})
+	redirect(res, '/configuracion?msg=Empresa guardada.&tone=ok')
+}
+
+function postConfiguracionProveedor(db: DatabaseSync, res: ServerResponse, form: URLSearchParams): void {
 	const editable = proveedorFromForm(form)
 	const nueva = form.get('prov_contrasena')?.trim()
 	guardarProveedor(db, editable, nueva || undefined)
-	redirect(res, '/configuracion?msg=Configuración guardada.&tone=ok')
+	redirect(res, '/configuracion?msg=Proveedor guardado.&tone=ok')
 }
 
 async function postProbarConexion(db: DatabaseSync, res: ServerResponse, form: URLSearchParams): Promise<void> {
@@ -518,9 +626,10 @@ async function postProbarConexion(db: DatabaseSync, res: ServerResponse, form: U
 	}
 }
 
-function postBorrarImportados(db: DatabaseSync, res: ServerResponse): void {
+function postBorrarImportados(db: DatabaseSync, res: ServerResponse, path: string): void {
 	borrarDatosImportados(db)
-	redirect(res, '/configuracion?msg=Datos importados borrados.&tone=info')
+	const dest = path.includes('sincronizacion') ? '/sincronizacion' : '/configuracion'
+	redirect(res, `${dest}?msg=Datos importados borrados.&tone=info`)
 }
 
 async function postSync(db: DatabaseSync, res: ServerResponse, kind: 'importacion' | 'pagadas', simulacion: boolean): Promise<void> {
@@ -579,10 +688,50 @@ function historialConDetalle(db: DatabaseSync, clienteId: number) {
 }
 
 function detalleEvento(ev: { tipo: string; payload: Record<string, unknown> }): string {
-	if (ev.tipo === 'factura_importada' && typeof ev.payload.numero === 'string') return ev.payload.numero
-	if (ev.tipo === 'pagada_en_isp' && typeof ev.payload.num_factura_isp === 'string') return ev.payload.num_factura_isp
+	if (ev.tipo === 'factura_importada') {
+		const cuota = typeof ev.payload.cuota === 'string' ? `Cuota ${ev.payload.cuota}` : ''
+		return cuota
+	}
+	if (ev.tipo === 'pagada_en_isp' && typeof ev.payload.num_factura_isp === 'string') {
+		return `Factura del administrador ${ev.payload.num_factura_isp}`
+	}
+	if (ev.tipo === 'cliente_creado' && typeof ev.payload.contrato_isp === 'number') {
+		return `Desde el contrato ${ev.payload.contrato_isp} del administrador`
+	}
 	if (ev.tipo === 'reabierta_en_isp' && typeof ev.payload.motivo === 'string') return ev.payload.motivo
 	return ''
+}
+
+function tituloHistorial(ev: { tipo: string; payload: Record<string, unknown> }): string {
+	const base = ETIQUETAS_HISTORIAL[ev.tipo] ?? ev.tipo
+	if (ev.tipo === 'factura_importada' && typeof ev.payload.numero === 'string') return `${base} — ${ev.payload.numero}`
+	if (ev.tipo === 'pagada_en_isp' && typeof ev.payload.num_factura_isp === 'string') return `${base} — ${ev.payload.num_factura_isp}`
+	return base
+}
+
+function estadoFacturaCelda(f: { readonly estado: string; readonly pagadaEn: string | null }): Raw {
+	if (f.estado === 'pagada') {
+		return html`<div class="stack-sm">${pill('Pagada', 'ok')}${f.pagadaEn ? html`<span class="sub">${date(f.pagadaEn.slice(0, 10))}</span>` : ''}</div>`
+	}
+	return pill('Abierta', 'warn')
+}
+
+function textoVentanaProveedor(proveedor: Proveedor): string {
+	const ventana = proveedor.ventanaMeses === null ? 'Sin ventana' : `${proveedor.ventanaMeses} meses`
+	const recientes = proveedor.maxCuotasRecientes === null ? 'sin límite de recientes' : `máx. ${proveedor.maxCuotasRecientes} recientes`
+	return `${ventana} · ${recientes}`
+}
+
+function textoCorridaAutomatica(proveedor: Proveedor): Raw {
+	if (!proveedor.corridaAutomaticaActiva) return pill('Apagada', 'mute')
+	return html`${pill('Encendida', 'ok')} · ${proveedor.corridaAutomaticaHora ?? '—'} (Caracas)`
+}
+
+function etiquetaFechaSandbox(): string {
+	const mes = currentPeriod()
+	const [y, m] = mes.split('-')
+	const mesNombre = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'][Number(m) - 1]
+	return `${date(today())} · mes actual ${mesNombre} ${y}`
 }
 
 function sendHtml(res: ServerResponse, status: number, body: string): void {

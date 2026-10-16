@@ -219,6 +219,7 @@ function procesarContrato(
 
 		if (simulacion) {
 			contadores.installmentsWouldImport++
+			onImportada(item.montoCentavos)
 			registrarDetalle(db, corridaId, item.fila, null, null, 'se_importaria', item.descripcion, item.montoCentavos)
 			continue
 		}
