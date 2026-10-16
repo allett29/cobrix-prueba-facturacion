@@ -58,9 +58,17 @@ describe('periodo y cuota', () => {
 describe('contrato/individual', () => {
 	const base = {
 		contrato_id: 900101,
+		codigo: '0900101',
 		identificacion_contrato: 'V-12345678',
+		nombre_contrato: 'ANA PEREZ',
+		telefono: '04120000000',
+		email: 'a@example.com',
+		direccion: 'Calle 1',
 		estado: 'ACTIVO',
 		precio_servicio: '25.000000',
+		nombre_plan: 'PLAN15MB25',
+		sigla_sucursal: 'CCS',
+		nombre_sucursal: 'Caracas',
 		moneda_sigla: 'USD',
 		detalle_deuda: ['PLAN15MB25 - 2026 Agosto'],
 	}
@@ -111,7 +119,7 @@ describe('filtros de importación', () => {
 describe('ledger', () => {
 	it('marca pagada con saldo 0 y pago', () => {
 		const result = clasificarCuotaEnLedger(
-			[{ id_factura: 8800007, id_cuota: 7000008, periodo_cuota: '2026-08', tarifa: 25, valor_pago: 25, descuento: 0, saldo_cuota: 0 }],
+			[{ id_factura: 8800007, num_factura: '008800007', id_cuota: 7000008, periodo_cuota: '2026-08', tarifa: 25, valor_pago: 25, descuento: 0, saldo_cuota: 0 }],
 			{ saldoCobrix: 20, numFactura: '008800007' },
 		)
 		assert.equal(result.kind, 'pagada')
@@ -119,7 +127,7 @@ describe('ledger', () => {
 
 	it('detecta abono parcial', () => {
 		const result = clasificarCuotaEnLedger(
-			[{ id_factura: 1, id_cuota: 1, periodo_cuota: '2026-08', tarifa: 20, valor_pago: 5, descuento: 0, saldo_cuota: 15 }],
+			[{ id_factura: 1, num_factura: '1', id_cuota: 1, periodo_cuota: '2026-08', tarifa: 20, valor_pago: 5, descuento: 0, saldo_cuota: 15 }],
 			{ saldoCobrix: 20 },
 		)
 		assert.equal(result.kind, 'abono_parcial')
@@ -127,7 +135,7 @@ describe('ledger', () => {
 
 	it('exonerada no es pago', () => {
 		const result = clasificarCuotaEnLedger(
-			[{ id_factura: 0, id_cuota: 1, periodo_cuota: '2026-08', tarifa: 25, valor_pago: 0, descuento: 0, saldo_cuota: 0 }],
+			[{ id_factura: 0, num_factura: '', id_cuota: 1, periodo_cuota: '2026-08', tarifa: 25, valor_pago: 0, descuento: 0, saldo_cuota: 0 }],
 			{ saldoCobrix: 25 },
 		)
 		assert.equal(result.kind, 'exonerada')

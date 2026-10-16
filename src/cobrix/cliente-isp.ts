@@ -110,11 +110,19 @@ function parseFilaCuota(row: unknown): FilaCuotaPendiente {
 	const value = row as Row
 	return {
 		contrato_id: Number(value.contrato_id),
+		codigo: String(value.codigo ?? ''),
 		identificacion_contrato: String(value.identificacion_contrato ?? ''),
+		nombre_contrato: String(value.nombre_contrato ?? ''),
+		telefono: String(value.telefono ?? ''),
+		email: String(value.email ?? ''),
+		direccion: String(value.direccion ?? ''),
 		estado: String(value.estado ?? ''),
 		deuda_id: String(value.deuda_id ?? ''),
 		deuda: Number(value.deuda ?? 0),
 		precio_servicio: String(value.precio_servicio ?? '0'),
+		nombre_plan: String(value.nombre_plan ?? ''),
+		sigla_sucursal: String(value.sigla_sucursal ?? ''),
+		nombre_sucursal: String(value.nombre_sucursal ?? ''),
 		moneda_sigla: String(value.moneda_sigla ?? ''),
 		detalle_deuda: Array.isArray(value.detalle_deuda) ? value.detalle_deuda.map(String) : [],
 	}
@@ -130,6 +138,7 @@ function parseLineasLedger(row: unknown): LineaLedger[] {
 	if (!Number.isInteger(idCuota)) return []
 	return [{
 		id_factura: Number(value.id_factura ?? 0),
+		num_factura: String(value.num_factura ?? ''),
 		id_cuota: idCuota,
 		periodo_cuota: String(pago.periodo_cuota ?? ''),
 		tarifa: Number(pago.tarifa ?? 0),

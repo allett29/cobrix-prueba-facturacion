@@ -8,11 +8,19 @@ export const ESTADOS_CONTRATO_CONOCIDOS = new Set([
 
 export interface FilaCuotaPendiente {
 	readonly contrato_id: number
+	readonly codigo: string
 	readonly identificacion_contrato: string
+	readonly nombre_contrato: string
+	readonly telefono: string
+	readonly email: string
+	readonly direccion: string
 	readonly estado: string
 	readonly deuda_id: string
 	readonly deuda: number
 	readonly precio_servicio: string
+	readonly nombre_plan: string
+	readonly sigla_sucursal: string
+	readonly nombre_sucursal: string
 	readonly moneda_sigla: string
 	readonly detalle_deuda: readonly string[]
 }

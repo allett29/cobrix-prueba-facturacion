@@ -4,6 +4,7 @@
 
 export interface LineaLedger {
 	readonly id_factura: number
+	readonly num_factura: string
 	readonly id_cuota: number
 	readonly periodo_cuota: string
 	readonly tarifa: number
