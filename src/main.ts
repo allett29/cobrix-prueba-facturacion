@@ -15,10 +15,12 @@ process.env.SANDBOX_TODAY ??= '2026-10-13'
 
 const { DEFAULT_BILLING_API_DB, seedBillingApi } = await import('./billing-api/seed.ts')
 const { createBillingApiServer } = await import('./billing-api/server.ts')
+const { DEFAULT_COBRIX_DB, openCobrixDatabase } = await import('./cobrix/db.ts')
 const { createApp } = await import('./web/app.ts')
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const billingApiDb = process.env.BILLING_API_DB ?? DEFAULT_BILLING_API_DB
+const cobrixDbPath = process.env.COBRIX_DB ?? DEFAULT_COBRIX_DB
 const appPort = Number(process.env.PORT ?? 4300)
 const billingApiPort = Number(process.env.BILLING_API_PORT ?? 4310)
 const host = process.env.HOST ?? '127.0.0.1'
@@ -29,6 +31,8 @@ const billingApi = createBillingApiServer(billingApiDb)
 await billingApi.listen(billingApiPort, host)
 const simulatorUrl = `http://${host}:${billingApiPort}`
 
+const cobrix = openCobrixDatabase(cobrixDbPath, { apiBaseUrl: simulatorUrl })
+
 const app = createApp({ simulatorUrl, assignmentPath: resolve(root, 'docs/ENUNCIADO.md') })
 app.listen(appPort, host)
 
@@ -36,9 +40,11 @@ console.log(`Panel (esqueleto):        http://${host}:${appPort}`)
 console.log(`API del administrador:    ${simulatorUrl}/api/v1`)
 console.log(`Swagger:                  ${simulatorUrl}/docs`)
 console.log(`Fecha de la prueba:       ${process.env.SANDBOX_TODAY}`)
+console.log(`Base Cobrix:              ${cobrixDbPath}`)
 
 const shutdown = (): void => {
 	app.close()
+	cobrix.db.close()
 	void billingApi.close().then(() => process.exit(0))
 }
 process.on('SIGINT', shutdown)

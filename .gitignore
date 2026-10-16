@@ -1,4 +1,7 @@
 node_modules
+data/cobrix.sqlite
+data/cobrix.sqlite-wal
+data/cobrix.sqlite-shm
 data/*.sqlite-wal
 data/*.sqlite-shm
 *.log
