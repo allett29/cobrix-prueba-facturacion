@@ -12,6 +12,7 @@ import { after, before, describe, it } from 'node:test'
 
 import { SANDBOX_API_USER, seedBillingApi } from '../src/billing-api/seed.ts'
 import { createBillingApiServer, type BillingApiServer } from '../src/billing-api/server.ts'
+import { openCobrixDatabase } from '../src/cobrix/db.ts'
 import { createApp } from '../src/web/app.ts'
 
 process.env.SANDBOX_TODAY = '2026-10-13'
@@ -22,15 +23,18 @@ describe('entorno de la prueba', () => {
 	let base: string
 	let panel: ReturnType<typeof createApp>
 	let panelBase: string
+	let cobrixDb: ReturnType<typeof openCobrixDatabase>
 
 	before(async () => {
 		dir = mkdtempSync(join(tmpdir(), 'prueba-facturacion-'))
 		seedBillingApi(join(dir, 'billing-api.sqlite'))
 		api = createBillingApiServer(join(dir, 'billing-api.sqlite'))
 		base = `http://127.0.0.1:${await api.listen(0)}`
+		cobrixDb = openCobrixDatabase(join(dir, 'cobrix.sqlite'), { apiBaseUrl: base })
 		panel = createApp({
 			simulatorUrl: base,
 			assignmentPath: fileURLToPath(new URL('../docs/ENUNCIADO.md', import.meta.url)),
+			db: cobrixDb.db,
 		})
 		await new Promise<void>(resolve => panel.listen(0, '127.0.0.1', resolve))
 		const address = panel.address()
@@ -39,6 +43,7 @@ describe('entorno de la prueba', () => {
 
 	after(async () => {
 		await new Promise(resolve => panel.close(resolve))
+		cobrixDb.db.close()
 		await api.close()
 		rmSync(dir, { recursive: true, force: true })
 	})
@@ -64,10 +69,16 @@ describe('entorno de la prueba', () => {
 		}
 	})
 
-	it('el panel sirve el esqueleto y el enunciado, sin pantalla de simulador', async () => {
-		for (const path of ['/', '/clientes', '/clientes/1', '/sincronizacion', '/configuracion']) {
+	it('el panel sirve las pantallas principales y el enunciado, sin pantalla de simulador', async () => {
+		for (const [path, needle] of [
+			['/', 'Por cobrar'],
+			['/clientes', 'Clientes'],
+			['/clientes/1', 'Cliente no encontrado'],
+			['/sincronizacion', 'Importar'],
+			['/configuracion', 'Guardar'],
+		] as const) {
 			const body = await (await fetch(`${panelBase}${path}`)).text()
-			assert.match(body, /Por implementar/, path)
+			assert.match(body, new RegExp(needle), path)
 		}
 		assert.match(await (await fetch(`${panelBase}/enunciado`)).text(), /Criterios de aceptación/)
 		assert.equal((await fetch(`${panelBase}/simulador`)).status, 404)

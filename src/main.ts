@@ -33,10 +33,14 @@ const simulatorUrl = `http://${host}:${billingApiPort}`
 
 const cobrix = openCobrixDatabase(cobrixDbPath, { apiBaseUrl: simulatorUrl })
 
-const app = createApp({ simulatorUrl, assignmentPath: resolve(root, 'docs/ENUNCIADO.md') })
+const app = createApp({
+	simulatorUrl,
+	assignmentPath: resolve(root, 'docs/ENUNCIADO.md'),
+	db: cobrix.db,
+})
 app.listen(appPort, host)
 
-console.log(`Panel (esqueleto):        http://${host}:${appPort}`)
+console.log(`Panel Cobrix:             http://${host}:${appPort}`)
 console.log(`API del administrador:    ${simulatorUrl}/api/v1`)
 console.log(`Swagger:                  ${simulatorUrl}/docs`)
 console.log(`Fecha de la prueba:       ${process.env.SANDBOX_TODAY}`)

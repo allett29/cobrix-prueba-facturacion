@@ -203,6 +203,111 @@ export function actualizarContactoCliente(
 	`).run(input.nombre, input.correo, input.telefono, ts(), clienteId)
 }
 
+export function leerCliente(db: DatabaseSync, clienteId: number): Cliente | undefined {
+	const row = db.prepare('SELECT * FROM cliente WHERE id = ?').get(clienteId) as Row | undefined
+	return row ? mapCliente(row) : undefined
+}
+
+export interface FilaClienteResumen {
+	readonly cliente: Cliente
+	readonly contratos: number
+	readonly facturasAbiertas: number
+	readonly facturasPagadas: number
+	readonly deudaCentavos: number
+	readonly vencimientoAntiguo: string | null
+}
+
+export function listarClientesResumen(db: DatabaseSync, busqueda = ''): FilaClienteResumen[] {
+	const q = busqueda.trim().toLowerCase()
+	const like = q ? `%${q.replaceAll('%', '')}%` : null
+	const rows = db.prepare(`
+		SELECT
+			c.*,
+			COUNT(DISTINCT cp.id) AS contratos,
+			COALESCE(SUM(CASE WHEN f.estado = 'abierta' THEN 1 ELSE 0 END), 0) AS abiertas,
+			COALESCE(SUM(CASE WHEN f.estado = 'pagada' THEN 1 ELSE 0 END), 0) AS pagadas,
+			COALESCE(SUM(CASE WHEN f.estado = 'abierta' THEN f.saldo_centavos ELSE 0 END), 0) AS deuda,
+			MIN(CASE WHEN f.estado = 'abierta' THEN f.vencimiento ELSE NULL END) AS vencimiento_antiguo
+		FROM cliente c
+		LEFT JOIN contrato_proveedor cp ON cp.cliente_id = c.id
+		LEFT JOIN factura f ON f.cliente_id = c.id
+		WHERE (
+			? IS NULL
+			OR lower(c.nombre) LIKE ?
+			OR lower(c.identificacion_mostrar) LIKE ?
+			OR lower(c.identificacion_normalizada) LIKE ?
+		)
+		GROUP BY c.id
+		ORDER BY c.nombre COLLATE NOCASE, c.id
+	`).all(like, like, like, like) as Row[]
+	return rows.map(row => ({
+		cliente: mapCliente(row),
+		contratos: Number(row.contratos),
+		facturasAbiertas: Number(row.abiertas),
+		facturasPagadas: Number(row.pagadas),
+		deudaCentavos: Number(row.deuda),
+		vencimientoAntiguo: row.vencimiento_antiguo === null ? null : String(row.vencimiento_antiguo),
+	}))
+}
+
+export function listarFacturasPorCliente(db: DatabaseSync, clienteId: number): Factura[] {
+	const rows = db.prepare(`
+		SELECT * FROM factura WHERE cliente_id = ?
+		ORDER BY estado ASC, vencimiento ASC, id ASC
+	`).all(clienteId) as Row[]
+	return rows.map(mapFactura)
+}
+
+export interface EventoHistorial {
+	readonly id: number
+	readonly ocurridoEn: string
+	readonly tipo: string
+	readonly facturaId: number | null
+	readonly payload: Record<string, unknown>
+}
+
+export function listarHistorialCliente(db: DatabaseSync, clienteId: number): EventoHistorial[] {
+	const rows = db.prepare(`
+		SELECT * FROM historial_cliente WHERE cliente_id = ?
+		ORDER BY ocurrido_en DESC, id DESC
+	`).all(clienteId) as Row[]
+	return rows.map(row => ({
+		id: Number(row.id),
+		ocurridoEn: String(row.ocurrido_en),
+		tipo: String(row.tipo),
+		facturaId: row.factura_id === null ? null : Number(row.factura_id),
+		payload: JSON.parse(String(row.payload)) as Record<string, unknown>,
+	}))
+}
+
+export interface FilaDetalleCorrida {
+	readonly id: number
+	readonly idContratoIsp: number | null
+	readonly idCuotaProveedor: string | null
+	readonly clienteId: number | null
+	readonly facturaId: number | null
+	readonly resultado: string
+	readonly detalle: string
+	readonly montoCentavos: number | null
+}
+
+export function listarDetalleCorrida(db: DatabaseSync, corridaId: number): FilaDetalleCorrida[] {
+	const rows = db.prepare(`
+		SELECT * FROM corrida_detalle WHERE corrida_id = ?
+		ORDER BY id ASC
+	`).all(corridaId) as Row[]
+	return rows.map(row => ({
+		id: Number(row.id),
+		idContratoIsp: row.id_contrato_isp === null ? null : Number(row.id_contrato_isp),
+		idCuotaProveedor: row.id_cuota_proveedor === null ? null : String(row.id_cuota_proveedor),
+		clienteId: row.cliente_id === null ? null : Number(row.cliente_id),
+		facturaId: row.factura_id === null ? null : Number(row.factura_id),
+		resultado: String(row.resultado),
+		detalle: String(row.detalle),
+		montoCentavos: row.monto_centavos === null ? null : Number(row.monto_centavos),
+	}))
+}
+
 // -------------------------------------------------------------- contrato_proveedor
 
 function mapContrato(row: Row): ContratoProveedor {
@@ -351,6 +456,13 @@ export function crearFactura(db: DatabaseSync, input: NuevaFactura): Factura {
 export function listarFacturasAbiertas(db: DatabaseSync, proveedorId: number): Factura[] {
 	const rows = db.prepare(`
 		SELECT * FROM factura WHERE proveedor_id = ? AND estado = 'abierta' ORDER BY vencimiento, id
+	`).all(proveedorId) as Row[]
+	return rows.map(mapFactura)
+}
+
+export function listarFacturasPagadas(db: DatabaseSync, proveedorId: number): Factura[] {
+	const rows = db.prepare(`
+		SELECT * FROM factura WHERE proveedor_id = ? AND estado = 'pagada' ORDER BY pagada_en, id
 	`).all(proveedorId) as Row[]
 	return rows.map(mapFactura)
 }
