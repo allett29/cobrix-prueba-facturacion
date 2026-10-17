@@ -1,10 +1,12 @@
 # Nota de entrega — Alejandro
 
-Documento único para el evaluador: decisiones, uso de IA, demo en Render y cómo revisar la prueba. El enunciado oficial sigue en [`docs/ENUNCIADO.md`](docs/ENUNCIADO.md); la guía de la API simulada en [`docs/API.md`](docs/API.md).
+**Documento único de mi entrega:** decisiones, cómo levantar *mi* implementación, variables, pruebas, demo Render, uso de IA y extras. Dejé el [`README.md`](README.md) **tal como venía en el zip** (solo instrucciones genéricas del reto). Enunciado: [`docs/ENUNCIADO.md`](docs/ENUNCIADO.md) · API: [`docs/API.md`](docs/API.md).
 
-## Cómo levantar y probar
+**Repositorio:** https://github.com/allett29/cobrix-prueba-facturacion
 
-**Local (Node 24):**
+## Cómo levantar mi implementación
+
+Node **24** obligatorio (`node:sqlite`, `.ts` sin compilar). Con Node 20 falla el arranque.
 
 ```bash
 npm install
@@ -15,14 +17,49 @@ npm run typecheck
 
 | Qué | URL |
 | --- | --- |
-| Panel | http://127.0.0.1:4300 |
+| Panel (implementado) | http://127.0.0.1:4300 |
 | Enunciado en el panel | http://127.0.0.1:4300/enunciado |
 | API simulada | http://127.0.0.1:4310/api/v1 |
 | Swagger + simulador de caja | http://127.0.0.1:4310/docs |
 
-Proveedor por defecto: `cobrix` / `cobrix-sandbox`. Fecha sandbox: **2026-10-13** (`SANDBOX_TODAY`).
+Proveedor en configuración: `cobrix` / `cobrix-sandbox`. Fecha sandbox fijada en **2026-10-13** (`SANDBOX_TODAY` en `npm start`) para los criterios §5.
 
-**Repositorio:** https://github.com/allett29/cobrix-prueba-facturacion
+### Variables de entorno (opcionales)
+
+| Variable | Uso |
+| --- | --- |
+| `PORT` | Panel (4300) |
+| `BILLING_API_PORT` | API simulada (4310) |
+| `COBRIX_DB` | Ruta de `data/cobrix.sqlite` |
+| `COBRIX_MASTER_KEY` | Cifrado de contraseña del proveedor (`src/cobrix/crypto.ts`); en local hay fallback de desarrollo |
+| `SANDBOX_TODAY` | Fecha “hoy” del sandbox |
+| `COBRIX_SCHEDULER_INTERVAL_MS` | Sondeo corrida automática (5000 local; 30000 en Render) |
+| `HOST` | Interfaz del panel (`0.0.0.0` en Render) |
+| `BILLING_API_HOST` | API simulada en loopback (`127.0.0.1` en Render) |
+| `SIMULATOR_URL` | Base HTTP hacia el ISP (p. ej. `http://127.0.0.1:4310`) |
+| `BILLING_API_DB` | Ruta SQLite del administrador simulado |
+
+### Flujo operativo
+
+1. **Configuración** → Probar conexión.
+2. **Sincronización** → Simular e **Importar**.
+3. Swagger → **Simulador** → `POST /__sim/pagar` / `POST /__sim/anular`.
+4. **Actualizar pagadas**.
+5. **Clientes**, expedientes y detalle de corrida (fila a fila).
+
+Corrida automática (si está activa): import + pagadas a la hora configurada, zona `America/Caracas`.
+
+### Estructura que implementé
+
+| Ruta | Contenido |
+| --- | --- |
+| `src/billing-api/` | API simulada (sin modificar) |
+| `src/cobrix/` | Dominio, sync HTTP, corrida automática, reglas §4 |
+| `src/web/` | Panel SSR (`app.ts`, `layout.ts`) |
+| `src/main.ts` | Arranque panel + API simulada |
+| `test/*.test.ts` | 30 pruebas: reglas, aceptación import/ciclo, entorno |
+| `data/cobrix.sqlite` | Base Cobrix (generada al arrancar) |
+| `render.yaml` | Blueprint Render |
 
 ## Demo en Render (sin instalar Node)
 
@@ -32,7 +69,7 @@ Proveedor por defecto: `cobrix` / `cobrix-sandbox`. Fecha sandbox: **2026-10-13*
 | Health check | https://cobrix-prueba-facturacion.onrender.com/health |
 | Swagger (mismo host, proxy `/sim`) | https://cobrix-prueba-facturacion.onrender.com/sim/docs |
 | OpenAPI | https://cobrix-prueba-facturacion.onrender.com/sim/openapi.json |
-| Desplegar tu copia | [Deploy to Render](https://render.com/deploy?repo=https://github.com/allett29/cobrix-prueba-facturacion) |
+| Desplegar tu copia | [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/allett29/cobrix-prueba-facturacion) |
 
 Blueprint: [`render.yaml`](render.yaml). Un solo servicio ejecuta panel + API simulada en loopback (`BILLING_API_HOST=127.0.0.1`, `SIMULATOR_URL=http://127.0.0.1:4310`). En el **Resumen** los enlaces de Swagger apuntan a `/sim/…`, no a `127.0.0.1:4310`, para que funcionen en producción.
 
@@ -50,7 +87,7 @@ Seguí el esqueleto del zip: **Node 24 + TypeScript sin dependencias de runtime*
 - ISP = fuente de verdad del devengo/cobro; Cobrix **reconcilia** en corridas. Regla de oro: **no adivinar** (estados raros, filas incoherentes, exoneradas, abonos parciales → registrar motivo, no marcar pagada a ciegas).
 - Dos bases: SQLite del simulador (intocable en `src/billing-api/`) y **`data/cobrix.sqlite`** con dominio en español: `empresa`, `proveedor`, `cliente`, `contrato_proveedor`, `factura`, `corrida`, `corrida_detalle`, `historial_cliente`.
 - Montos en **centavos** (`INTEGER`), moneda USD en UI.
-- Login Bearer (~2 h); token en **memoria** en el cliente HTTP; contraseña del proveedor **cifrada en reposo** (`COBRIX_MASTER_KEY` en Render, fallback documentado en README para local).
+- Login Bearer (~2 h); token en **memoria** en el cliente HTTP; contraseña del proveedor **cifrada en reposo** (`COBRIX_MASTER_KEY` en Render; ver tabla de variables arriba para local).
 - Importación **idempotente** por `(proveedor_id, id_cuota_proveedor)`. Simulación escribe corrida + detalle pero **no** clientes/facturas.
 - Pagadas: solo con evidencia del libro (§4). Anulación en el ISP: realinear en la siguiente corrida (reabrir factura si hace falta) y dejar rastro en historial.
 - Corrida automática: hora en `America/Caracas`, import + pagadas (no simulación); `ultima_corrida_automatica_fecha` evita duplicar el mismo día tras reinicio.

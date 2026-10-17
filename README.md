@@ -1,79 +1,48 @@
 # Prueba técnica · Cobrix
 
-Integración de Cobrix con la API de un **administrador de facturas** ISP: importación de clientes y facturas, reconciliación de pagados y panel operativo.
+Integra Cobrix con la API de un **administrador de facturas** de un ISP: importa clientes y facturas, aplica los pagos que el ISP ya cobró y construye el panel para operarlo.
 
-**Enunciado:** [`docs/ENUNCIADO.md`](docs/ENUNCIADO.md) · **Nota de entrega (decisiones, IA, demo):** [`NOTA.md`](NOTA.md)
+**Empieza por el enunciado: [`docs/ENUNCIADO.md`](docs/ENUNCIADO.md).**
 
-## Evaluador — ejecutar en Render (sin Node local)
+## Levantar el entorno
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/allett29/cobrix-prueba-facturacion)
-
-1. Clic en el botón → [iniciar sesión en Render](https://dashboard.render.com/login) (GitHub).
-2. **Apply** en el blueprint (`render.yaml`).
-3. Abrir la URL **Live** del servicio.
-
-Demo y guía del evaluador: [`NOTA.md`](NOTA.md) · Credenciales: `cobrix` / `cobrix-sandbox`.
-
-## Requisitos
-
-Node **24** (usa `node:sqlite` y ejecuta `.ts` sin compilar). Con Node 20 verás `ERR_UNKNOWN_FILE_EXTENSION` o `ERR_UNKNOWN_BUILTIN_MODULE`.
+Requiere Node 24.
 
 ```bash
 npm install
 npm start
 ```
 
-| Servicio | URL |
+| Qué | Dónde |
 | --- | --- |
-| Panel Cobrix | http://127.0.0.1:4300 |
-| API del administrador | http://127.0.0.1:4310/api/v1 |
-| Swagger (incluye simulador de caja) | http://127.0.0.1:4310/docs |
+| Panel (esqueleto con las pantallas por implementar) | http://127.0.0.1:4300 |
+| API del administrador de facturas | http://127.0.0.1:4310/api/v1 |
+| Swagger de la API | http://127.0.0.1:4310/docs |
 
-Credenciales por defecto del proveedor: usuario `cobrix`, contraseña `cobrix-sandbox`.
+Credenciales de la API: usuario `cobrix`, contraseña `cobrix-sandbox`.
 
-La fecha de la prueba queda fijada en **2026-10-13** (`SANDBOX_TODAY` en `npm start`) para que coincidan los criterios de aceptación del enunciado.
+Al levantarlo, el panel muestra cada pantalla con «Por implementar» y la lista de lo que debe hacer. Para crear pagos del lado del ISP, usa la sección «Simulador» del Swagger.
 
-## Variables de entorno (opcionales)
+![Panel al empezar](docs/capturas/00-esqueleto-resumen.png)
 
-| Variable | Uso |
-| --- | --- |
-| `PORT` | Panel (4300) |
-| `BILLING_API_PORT` | API simulada (4310) |
-| `COBRIX_DB` | Ruta de `data/cobrix.sqlite` |
-| `COBRIX_MASTER_KEY` | Clave para cifrar la contraseña del proveedor (ver `src/cobrix/crypto.ts`) |
-| `SANDBOX_TODAY` | Fecha “hoy” del sandbox |
-| `COBRIX_SCHEDULER_INTERVAL_MS` | Intervalo del sondeo de corrida automática (default 5000; en producción suele usarse 30000+) |
-| `HOST` | Interfaz del panel (`0.0.0.0` en Render) |
-| `BILLING_API_HOST` | Interfaz de la API simulada (p. ej. `127.0.0.1` en Render) |
-| `SIMULATOR_URL` | URL base que Cobrix usa hacia el ISP (p. ej. `http://127.0.0.1:4310`) |
-| `BILLING_API_DB` | Ruta de la SQLite del administrador simulado |
+El enunciado incluye una **referencia de layout** (§3.7): qué va en cada pantalla. El diseño UI/UX es tuyo; puedes usar shadcn/ui, Tailwind o lo que prefieras.
 
-## Flujo típico
+## Qué hay en el repositorio
 
-1. **Configuración** → probar conexión con la API.
-2. **Sincronización** → simular e **importar** clientes/facturas.
-3. En Swagger → **Simulador** → `POST /__sim/pagar` (y anular si aplica).
-4. **Actualizar pagadas** en el panel.
-5. Revisar **Clientes**, expedientes y detalle de corridas.
-
-La **corrida automática** (si está activa en configuración) ejecuta importación y actualización de pagadas una vez al día a la hora indicada, zona `America/Caracas`.
-
-## Despliegue en Render (demo pública)
-
-Blueprint en [`render.yaml`](render.yaml). URL demo y Swagger `/sim`: [`NOTA.md`](NOTA.md).
+| Ruta | Qué es | ¿Se toca? |
+| --- | --- | --- |
+| `src/billing-api/` | API simulada del administrador, simulador de caja y Swagger | No |
+| `data/billing-api.sqlite` | Base del administrador: 26 clientes, 27 contratos, 210 cuotas | No |
+| `src/web/` | Esqueleto del panel: menú, estilos y pantallas vacías | Sí, o reemplázalo |
+| `src/cobrix/` | Vacío: aquí va tu integración (ver su `README`) | Sí |
+| `docs/ENUNCIADO.md` | Qué construir, reglas, criterios de aceptación y evaluación | — |
+| `docs/API.md` | Guía de la API con ejemplos | — |
 
 ## Pruebas
 
 ```bash
-npm test           # reglas, sync, ciclo de aceptación y entorno
+npm test           # comprueba que la API entregada responde como se documenta
 npm run typecheck
 ```
 
-## Estructura
-
-| Ruta | Contenido |
-| --- | --- |
-| `src/billing-api/` | API simulada del ISP (no modificar) |
-| `src/cobrix/` | Dominio, sync HTTP, corrida automática |
-| `src/web/` | Panel SSR (Node + plantillas) |
-| `data/cobrix.sqlite` | Base Cobrix (generada al arrancar, en `.gitignore`) |
+Agrega aquí tus propias pruebas (`test/*.test.ts`).
