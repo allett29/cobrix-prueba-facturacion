@@ -20,7 +20,7 @@ Asistentes (Cursor) para explorar el zip, alinear nombres con el enunciado, escr
 ## Demo pública para el evaluador
 
 - **Desplegar automáticamente:** [Deploy to Render](https://render.com/deploy?repo=https://github.com/allett29/cobrix-prueba-facturacion) (blueprint, sin configuración manual).
-- **URL en vivo (completar tras desplegar):** `https://________________.onrender.com`
+- **URL en vivo:** https://cobrix-prueba-facturacion.onrender.com
 - **Acceso:** panel en `/` · proveedor `cobrix` / `cobrix-sandbox` · sandbox fecha `2026-10-13`.
 
 ## Omisiones / con más tiempo
