@@ -10,6 +10,12 @@ Puedes revisar la prueba **sin instalar Node** desplegando el repo en Render (pl
 3. Espera estado **Live** (build: `npm install`, start: `npm start`, Node 24).
 4. Abre la URL pública del servicio (`https://…onrender.com`).
 
+**API / Swagger en producción** (mismo host que el panel, no `127.0.0.1`):
+
+- Swagger: `https://…onrender.com/sim/docs`
+- OpenAPI: `https://…onrender.com/sim/openapi.json`
+- Base API: `https://…onrender.com/sim/api/v1`
+
 **Primera visita (plan Free):** el servicio puede tardar ~30–60 s en despertar.
 
 ## Opción B — Demo ya desplegada por el candidato

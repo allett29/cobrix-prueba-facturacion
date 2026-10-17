@@ -87,6 +87,14 @@ describe('entorno de la prueba', () => {
 		assert.doesNotMatch(await (await fetch(`${panelBase}/`)).text(), /Simulador del administrador/)
 	})
 
+	it('expone Swagger del simulador bajo /sim (mismo host que el panel)', async () => {
+		const home = await (await fetch(`${panelBase}/`)).text()
+		assert.match(home, /\/sim\/docs/)
+		assert.doesNotMatch(home, /127\.0\.0\.1:4310\/docs/)
+		const spec = await (await fetch(`${panelBase}/sim/openapi.json`)).json() as { servers: Array<{ url: string }> }
+		assert.equal(spec.servers[0]?.url, '/sim')
+	})
+
 	it('POST borrar datos importados vacía Cobrix y redirige', async () => {
 		await ejecutarImportacion(cobrixDb.db, false)
 		assert.ok(totalesResumen(cobrixDb.db).clientes > 0)

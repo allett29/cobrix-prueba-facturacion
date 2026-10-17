@@ -50,10 +50,15 @@ import {
 } from './layout.ts'
 
 export interface AppDeps {
+	/** Base HTTP del simulador ISP (loopback en Render: http://127.0.0.1:4310). */
 	readonly simulatorUrl: string
+	/** Ruta pública en el panel que hace proxy al simulador (p. ej. /sim → …/docs). */
+	readonly simulatorPublicPath?: string
 	readonly assignmentPath: string
 	readonly db: DatabaseSync
 }
+
+const DEFAULT_SIMULATOR_PUBLIC_PATH = '/sim'
 
 const TIPOS_DOCUMENTO = ['V', 'E', 'J', 'G', 'P'] as const
 
@@ -125,6 +130,7 @@ function redirect(res: ServerResponse, location: string): void {
 
 export function createApp(deps: AppDeps): Server {
 	const { db } = deps
+	const simulatorPublicPath = deps.simulatorPublicPath ?? DEFAULT_SIMULATOR_PUBLIC_PATH
 
 	function companyName(): string {
 		return leerEmpresa(db).nombre
@@ -133,6 +139,11 @@ export function createApp(deps: AppDeps): Server {
 	async function route(req: IncomingMessage, res: ServerResponse): Promise<void> {
 		const url = new URL(req.url ?? '/', 'http://prueba.local')
 		const path = url.pathname.replace(/\/+$/, '') || '/'
+
+		if (path === simulatorPublicPath || path.startsWith(`${simulatorPublicPath}/`)) {
+			const subpath = path.slice(simulatorPublicPath.length) || '/'
+			return proxySimulator(req, res, url, subpath, deps.simulatorUrl, simulatorPublicPath)
+		}
 		const text = url.searchParams.get('msg')
 		const tone = url.searchParams.get('tone') as Tone | null
 		const flash = text && tone ? { tone, text } : undefined
@@ -147,7 +158,7 @@ export function createApp(deps: AppDeps): Server {
 			if (path === '/health') return send(res, 200, 'ok', 'text/plain; charset=utf-8')
 			if (path === '/app.css') return send(res, 200, `${CSS}\npre.doc { margin: 0; white-space: pre-wrap; font: 13.5px/1.6 var(--mono); color: var(--fg); max-width: 110ch; }`, 'text/css; charset=utf-8')
 			if (path === '/enunciado') return page('Enunciado', '', assignmentPage(deps))
-			if (path === '/') return page('Resumen', '/', resumenPage(deps))
+			if (path === '/') return page('Resumen', '/', resumenPage(deps, simulatorPublicPath))
 			if (path === '/clientes') return page('Clientes', '/clientes', clientesPage(db, url.searchParams.get('q') ?? ''))
 			if (path === '/sincronizacion') return page('Sincronización', '/sincronizacion', syncPage(db))
 			if (path === '/configuracion') return page('Configuración', '/configuracion', configPage(db))
@@ -199,11 +210,12 @@ export function createApp(deps: AppDeps): Server {
 	})
 }
 
-function resumenPage(deps: AppDeps): Raw {
+function resumenPage(deps: AppDeps, simulatorPublicPath: string): Raw {
 	const db = deps.db
 	const totales = totalesResumen(db)
 	const proveedor = leerProveedor(db)
 	const corridas = listarCorridas(db, 8)
+	const apiPublic = `${simulatorPublicPath}/api/v1`
 	return html`
 		<div class="head">
 			<div>
@@ -224,9 +236,9 @@ function resumenPage(deps: AppDeps): Raw {
 			<div class="body">
 				<dl class="facts">
 					<dt>Proveedor</dt><dd>${proveedor.nombreVisible}</dd>
-					<dt>URL de la API</dt><dd class="mono">${proveedor.urlApi}</dd>
+					<dt>URL de la API</dt><dd class="mono"><a href="${apiPublic}">${apiPublic}</a></dd>
 					<dt>Documentación de la API</dt>
-					<dd><a href="${deps.simulatorUrl}/docs" target="_blank" rel="noopener" ${dialogAlert('Abrir Swagger del simulador ISP en una pestaña nueva.', 'info', 'Documentación')}>Swagger</a> · <a href="${deps.simulatorUrl}/openapi.json" target="_blank" rel="noopener" ${dialogAlert('Descargar openapi.json del simulador en una pestaña nueva.', 'info', 'OpenAPI')}>openapi.json</a></dd>
+					<dd><a href="${simulatorPublicPath}/docs" target="_blank" rel="noopener" ${dialogAlert('Abrir Swagger del simulador ISP en una pestaña nueva.', 'info', 'Documentación')}>Swagger</a> · <a href="${simulatorPublicPath}/openapi.json" target="_blank" rel="noopener" ${dialogAlert('Descargar openapi.json del simulador en una pestaña nueva.', 'info', 'OpenAPI')}>openapi.json</a></dd>
 					<dt>Estados que se importan</dt><dd>${proveedor.estadosImportables.join(', ')}</dd>
 					<dt>Ventana</dt><dd>${textoVentanaProveedor(proveedor)}</dd>
 					<dt>Corrida automática</dt><dd>${textoCorridaAutomatica(proveedor)}</dd>
@@ -733,6 +745,73 @@ async function readForm(req: IncomingMessage): Promise<URLSearchParams> {
 	const chunks: Buffer[] = []
 	for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
 	return new URLSearchParams(Buffer.concat(chunks).toString('utf8'))
+}
+
+async function readRawBody(req: IncomingMessage): Promise<Buffer | undefined> {
+	if (req.method === 'GET' || req.method === 'HEAD') return undefined
+	const chunks: Buffer[] = []
+	for await (const chunk of req) chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+	const body = Buffer.concat(chunks)
+	return body.length ? body : undefined
+}
+
+function rewriteSwaggerHtml(html: string, publicPrefix: string): string {
+	return html
+		.replaceAll("url: '/openapi.json'", `url: '${publicPrefix}/openapi.json'`)
+		.replaceAll('href="/openapi.json"', `href="${publicPrefix}/openapi.json"`)
+}
+
+function rewriteOpenApiSpec(raw: string, publicPrefix: string): string {
+	const spec = JSON.parse(raw) as { servers?: Array<{ url: string; description?: string }> }
+	spec.servers = [{ url: publicPrefix, description: 'API simulada del ISP (mismo host que el panel)' }]
+	return JSON.stringify(spec)
+}
+
+async function proxySimulator(
+	req: IncomingMessage,
+	res: ServerResponse,
+	url: URL,
+	subpath: string,
+	simulatorUrl: string,
+	publicPrefix: string,
+): Promise<void> {
+	const target = `${simulatorUrl.replace(/\/+$/, '')}${subpath}${url.search}`
+	const forwardHeaders: Record<string, string> = {}
+	for (const name of ['authorization', 'content-type', 'accept']) {
+		const value = req.headers[name]
+		if (typeof value === 'string') forwardHeaders[name] = value
+	}
+	const body = await readRawBody(req)
+	try {
+		const upstream = await fetch(target, {
+			method: req.method,
+			headers: forwardHeaders,
+			body: body as BodyInit | undefined,
+			redirect: 'manual',
+		})
+		const raw = Buffer.from(await upstream.arrayBuffer())
+		const contentType = upstream.headers.get('content-type') ?? 'application/octet-stream'
+		let out = raw
+		if (subpath === '/docs' || subpath.endsWith('/docs')) {
+			out = Buffer.from(rewriteSwaggerHtml(raw.toString('utf8'), publicPrefix), 'utf8')
+		} else if (subpath === '/openapi.json') {
+			out = Buffer.from(rewriteOpenApiSpec(raw.toString('utf8'), publicPrefix), 'utf8')
+		}
+		const headers: Record<string, string | number> = { 'content-type': contentType, 'content-length': out.length }
+		res.writeHead(upstream.status, headers)
+		res.end(out)
+	} catch (error) {
+		sendHtml(
+			res,
+			502,
+			layout({
+				title: 'Simulador no disponible',
+				active: '',
+				company: 'Cobrix',
+				body: html`<h1>Simulador ISP no disponible</h1><p class="muted">${esc(error instanceof Error ? error.message : error)}</p><p><a href="/">Volver al resumen</a></p>`,
+			}),
+		)
+	}
 }
 
 function historialConDetalle(db: DatabaseSync, clienteId: number) {
