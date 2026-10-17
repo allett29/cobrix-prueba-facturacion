@@ -4,8 +4,6 @@ Repositorio: https://github.com/allett29/cobrix-prueba-facturacion
 
 ## Cómo levantar y probar
 
-Node **24** (`node:sqlite`, TypeScript ejecutado sin build).
-
 ```bash
 npm install
 npm start
@@ -66,45 +64,69 @@ Corrida automática (si está activa): importación y pagadas a la hora configur
 | Health | https://cobrix-prueba-facturacion.onrender.com/health |
 | Swagger (`/sim`) | https://cobrix-prueba-facturacion.onrender.com/sim/docs |
 | OpenAPI | https://cobrix-prueba-facturacion.onrender.com/sim/openapi.json |
-| Desplegar copia | [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/allett29/cobrix-prueba-facturacion) |
 
 Un servicio levanta panel y API en loopback. En **Resumen**, Swagger usa `/sim/…` para funcionar en el mismo host público. Plan Free: primera carga ~30–60 s.
 
 ## Decisiones arquitectónicas
 
-**Node 24 + TypeScript**, sin dependencias de runtime: panel SSR y API simulada en un proceso (`src/main.ts`), tests con el runner nativo de Node.
+Traté el caso como un **conector B2B de reconciliación**: el administrador del ISP es la fuente de verdad del cobro en su sistema; Cobrix materializa cuentas por cobrar, trazabilidad por corrida y reglas conservadoras. Guié el diseño con Cursor como asistente, pero cerré contratos antes de codear (schema, sync, seguridad).
 
-- Cobrix solo habla **HTTP** con el administrador; no lee la SQLite del ISP.
-- ISP = fuente de verdad; Cobrix **reconcilia** en corridas (**no adivinar**: respuestas raras, exoneradas, abonos parciales → motivo en detalle, sin marcar pagada sin evidencia).
-- **`data/cobrix.sqlite`**: `empresa`, `proveedor`, `cliente`, `contrato_proveedor`, `factura`, `corrida`, `corrida_detalle`, `historial_cliente`; montos en centavos.
-- Token Bearer en memoria; contraseña del proveedor cifrada en reposo.
-- Importación idempotente por `(proveedor_id, id_cuota_proveedor)`; simulación registra corrida/detalle sin escribir clientes/facturas.
-- Pagadas según §4; anulaciones en el ISP se realinean en la siguiente corrida.
-- Corrida automática en `America/Caracas`; transacciones SQLite en mutaciones de dominio.
+**Límites y fuentes de verdad**
 
-Sync en `src/cobrix/sync/`; panel en `src/web/`.
+- Cobrix **solo HTTP** hacia el ISP; la SQLite de `billing-api` no entra en la integración (aunque la miré para entender casos).
+- Dos contextos: `data/billing-api.sqlite` (entregado) vs `data/cobrix.sqlite` (dominio Cobrix). En UI digo “contratos”; en BD `contrato_proveedor` + `proveedor_id` para no mezclar espejo de integración con el contrato del administrador y dejar listo multi-proveedor (`UNIQUE(proveedor_id, id_contrato_isp)` e idempotencia por `(proveedor_id, id_cuota_proveedor)`).
+
+**Modelo de datos**
+
+- Tablas y columnas en **español**, montos en **centavos** (`INTEGER`), fechas civiles en texto.
+- Corridas append-only: `corrida` + `corrida_detalle` (una fila por cuota evaluada) y contadores en JSON en `corrida.contadores` (mismo vocabulario que los layouts de referencia, sin inflar el schema).
+- `historial_cliente` append-only para el timeline del expediente.
+- **Simulación:** persiste corrida y detalle; **no** escribe clientes/facturas/contratos.
+
+**Reglas de sync (§4)**
+
+- Importación: normalización de titular, filtros de estado/ventana/topes/tipo documento/moneda incoherente; `deuda_id: "0"` y saldo residual descartados; idempotencia estricta.
+- Pagadas: marcar **pagada** solo con evidencia clara en `pago_informacion` (incluyendo `success: false` con datos válidos); **abono parcial** → informar y dejar abierta; **sin evidencia** → no adivinar.
+- **Reconciliación inversa:** si el ISP anula un cobro (caso ELENA), la siguiente actualización realinea estado y saldo en Cobrix, no un “rollback” reactivo tipo pasarela.
+- Topes por corrida aplicados igual en **simular** e **importar** (misma lógica de contadores).
+
+**Credenciales y sesión**
+
+- Usuario/contraseña del proveedor = credencial de integración (cifrada en reposo con `COBRIX_MASTER_KEY`, seed sandbox para que `npm start` funcione sin `.env`).
+- `access_token` Bearer = sesión efímera en memoria del cliente HTTP; re-login ante 401/expiración. Son capas distintas.
+
+**Operación**
+
+- Corrida automática diaria en `America/Caracas` (import → pagadas), una vez por fecha, configurable en panel.
+- Mutaciones de dominio en transacciones SQLite; corrida fallida al inicio (login/red) sin tocar AR.
+
+**Panel**
+
+- Mantuve el **SSR del esqueleto** (`src/web/`): reglas y sync en `src/cobrix/`, presentación delgada.
+- En Render, proxy **`/sim`** hacia la API en loopback para Swagger/OpenAPI en la URL pública (el panel sigue usando loopback para las corridas).
 
 ## Uso de Cursor (IA)
 
-Exploración del repo, tests de aceptación, panel y despliegue. Validación con `npm test`, `npm run typecheck` y pruebas manuales en Swagger.
+La usé para acelerar scaffolding, pruebas y revisión de edge cases; validé todo con `npm test`, typecheck y recorridos manuales (Swagger + panel). Donde tuve que **corregir o decidir** sobre lo generado:
 
-Donde corregí o decidí yo:
-
-- **Reglas §4:** tests de aceptación (import + ciclo pagos/anulación) antes de cerrar UX; cada exclusión/pago con fila en `corrida_detalle`.
-- **Modales:** bug en confirmación (borrar importados): el cierre del diálogo cancelaba el POST; solución con `formToSubmit` en el handler.
-- **Producción:** proxy **`/sim`** para Swagger/OpenAPI en el mismo host (enlaces directos a `127.0.0.1:4310` no sirven en Render).
-- **Marca:** orientación del SVG con un flip vertical sobre el trazado escalado; paleta turquesa→azul en el colibrí; botones primarios con texto blanco.
+- **Diseño previo al código:** acordamos schema (8 tablas, JSON de contadores, cifrado + token), reconciliación conservadora y reapertura tras anulación ISP; rechacé capas “enterprise” que no servían al enunciado.
+- **Cliente HTTP:** quirks documentados (`estado` en lista de contratos, arrays sin envoltorio, ledger con `success: false`); tests de reglas y aceptación §5 antes de pulir UX.
+- **Motores de sync:** simulación con mismos topes que import real; orden de borrado con FKs (`corrida_detalle` antes de facturas); reset de `ultima_corrida_automatica_fecha` al borrar importados para poder reprobar el scheduler.
+- **Panel / producción:** bug en modales de confirmación que anulaba el POST (p. ej. borrar datos); proxy `/sim` y health check para demo en Render.
+- **Revisión de casos:** abono parcial LUIS, anulación ELENA, moneda incoherente 900110 — contrastados con detalle de corrida y tests.
 
 ## Punto diferencial
 
-- **UI/UX:** identidad Cobrix (paleta, menú flotante, modales de confirmación, colibrí en cabecera y diálogos).
-- **Render:** demo pública, health check, Swagger vía `/sim`.
-- **Operación:** detalle de corrida fila a fila e historial por cliente (motivo de cada cuota).
+- **UI/UX:** panel operable alineado a la referencia de layout (resumen, config, sync con detalle fila a fila, clientes/expediente), modales de confirmación/alerta, menú flotante, identidad visual Cobrix.
+- **Despliegue:** demo pública en Render con `/health` y Swagger en `/sim/docs` para que el evaluador pruebe sin levantar Node local.
 
 ## Con más tiempo
 
-- Cola de trabajos con reintentos para corridas largas.
-- Observabilidad (métricas/trazas por corrida).
-- E2E del panel (Playwright).
-- Panel en React/Tailwind manteniendo `src/cobrix` como núcleo.
-- Postgres o disco persistente en Render; secretos en vault gestionado.
+Misma arquitectura de sync, con capas de **plataforma** si el producto crece:
+
+- Cola de trabajos (Redis/SQS) y workers para import/pagadas con reintentos, backoff y un solo disparo por tenant (lock distribuido si hay varias réplicas).
+- Cron externo o CronJob en lugar de sondeo en el proceso del panel.
+- Observabilidad: métricas por corrida (excluidas, fallos ISP, latencia), trazas y alertas.
+- Secretos en vault gestionado, rotación y auditoría de acceso al panel (RBAC, multi-tenant fuerte).
+- E2E del flujo operador (Playwright); frontend en React/Tailwind opcional consumiendo el mismo núcleo `src/cobrix`.
+- Postgres + migraciones y disco persistente en producción; adaptadores por vendor cuando cada ISP cambie la API.
