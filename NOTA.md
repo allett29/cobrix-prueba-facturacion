@@ -1,12 +1,10 @@
 # Nota de entrega — Alejandro
 
-**Documento único de mi entrega:** decisiones, cómo levantar *mi* implementación, variables, pruebas, demo Render, uso de IA y extras. Dejé el [`README.md`](README.md) **tal como venía en el zip** (solo instrucciones genéricas del reto). Enunciado: [`docs/ENUNCIADO.md`](docs/ENUNCIADO.md) · API: [`docs/API.md`](docs/API.md).
+Repositorio: https://github.com/allett29/cobrix-prueba-facturacion
 
-**Repositorio:** https://github.com/allett29/cobrix-prueba-facturacion
+## Cómo levantar y probar
 
-## Cómo levantar mi implementación
-
-Node **24** obligatorio (`node:sqlite`, `.ts` sin compilar). Con Node 20 falla el arranque.
+Node **24** (`node:sqlite`, TypeScript ejecutado sin build).
 
 ```bash
 npm install
@@ -17,12 +15,12 @@ npm run typecheck
 
 | Qué | URL |
 | --- | --- |
-| Panel (implementado) | http://127.0.0.1:4300 |
+| Panel | http://127.0.0.1:4300 |
 | Enunciado en el panel | http://127.0.0.1:4300/enunciado |
 | API simulada | http://127.0.0.1:4310/api/v1 |
 | Swagger + simulador de caja | http://127.0.0.1:4310/docs |
 
-Proveedor en configuración: `cobrix` / `cobrix-sandbox`. Fecha sandbox fijada en **2026-10-13** (`SANDBOX_TODAY` en `npm start`) para los criterios §5.
+Proveedor: `cobrix` / `cobrix-sandbox`. Fecha sandbox: **2026-10-13** (`SANDBOX_TODAY`).
 
 ### Variables de entorno (opcionales)
 
@@ -31,7 +29,7 @@ Proveedor en configuración: `cobrix` / `cobrix-sandbox`. Fecha sandbox fijada e
 | `PORT` | Panel (4300) |
 | `BILLING_API_PORT` | API simulada (4310) |
 | `COBRIX_DB` | Ruta de `data/cobrix.sqlite` |
-| `COBRIX_MASTER_KEY` | Cifrado de contraseña del proveedor (`src/cobrix/crypto.ts`); en local hay fallback de desarrollo |
+| `COBRIX_MASTER_KEY` | Cifrado de contraseña del proveedor (`src/cobrix/crypto.ts`) |
 | `SANDBOX_TODAY` | Fecha “hoy” del sandbox |
 | `COBRIX_SCHEDULER_INTERVAL_MS` | Sondeo corrida automática (5000 local; 30000 en Render) |
 | `HOST` | Interfaz del panel (`0.0.0.0` en Render) |
@@ -45,85 +43,68 @@ Proveedor en configuración: `cobrix` / `cobrix-sandbox`. Fecha sandbox fijada e
 2. **Sincronización** → Simular e **Importar**.
 3. Swagger → **Simulador** → `POST /__sim/pagar` / `POST /__sim/anular`.
 4. **Actualizar pagadas**.
-5. **Clientes**, expedientes y detalle de corrida (fila a fila).
+5. **Clientes**, expedientes y detalle de corrida.
 
-Corrida automática (si está activa): import + pagadas a la hora configurada, zona `America/Caracas`.
+Corrida automática (si está activa): importación y pagadas a la hora configurada, zona `America/Caracas`.
 
-### Estructura que implementé
+### Estructura del código
 
 | Ruta | Contenido |
 | --- | --- |
-| `src/billing-api/` | API simulada (sin modificar) |
+| `src/billing-api/` | API simulada del ISP |
 | `src/cobrix/` | Dominio, sync HTTP, corrida automática, reglas §4 |
-| `src/web/` | Panel SSR (`app.ts`, `layout.ts`) |
+| `src/web/` | Panel SSR |
 | `src/main.ts` | Arranque panel + API simulada |
-| `test/*.test.ts` | 30 pruebas: reglas, aceptación import/ciclo, entorno |
-| `data/cobrix.sqlite` | Base Cobrix (generada al arrancar) |
+| `test/` | 30 pruebas (reglas, aceptación, entorno) |
 | `render.yaml` | Blueprint Render |
 
-## Demo en Render (sin instalar Node)
+## Demo en Render
 
 | Qué | Enlace |
 | --- | --- |
-| Panel en vivo | https://cobrix-prueba-facturacion.onrender.com |
-| Health check | https://cobrix-prueba-facturacion.onrender.com/health |
-| Swagger (mismo host, proxy `/sim`) | https://cobrix-prueba-facturacion.onrender.com/sim/docs |
+| Panel | https://cobrix-prueba-facturacion.onrender.com |
+| Health | https://cobrix-prueba-facturacion.onrender.com/health |
+| Swagger (`/sim`) | https://cobrix-prueba-facturacion.onrender.com/sim/docs |
 | OpenAPI | https://cobrix-prueba-facturacion.onrender.com/sim/openapi.json |
-| Desplegar tu copia | [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/allett29/cobrix-prueba-facturacion) |
+| Desplegar copia | [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/allett29/cobrix-prueba-facturacion) |
 
-Blueprint: [`render.yaml`](render.yaml). Un solo servicio ejecuta panel + API simulada en loopback (`BILLING_API_HOST=127.0.0.1`, `SIMULATOR_URL=http://127.0.0.1:4310`). En el **Resumen** los enlaces de Swagger apuntan a `/sim/…`, no a `127.0.0.1:4310`, para que funcionen en producción.
+Un servicio levanta panel y API en loopback. En **Resumen**, Swagger usa `/sim/…` para funcionar en el mismo host público. Plan Free: primera carga ~30–60 s.
 
-Credenciales y fecha sandbox: iguales que en local. En plan Free la primera carga puede tardar ~30–60 s.
+## Decisiones arquitectónicas
 
-**Recorrido sugerido:** Configuración → Probar conexión → Sincronización (simular e importar) → Clientes / expediente → detalle de corrida. Pagos de aceptación §5: simulador en Swagger (`POST /__sim/pagar`, `POST /__sim/anular`); en local es `:4310/docs`, en Render `/sim/docs`.
+**Node 24 + TypeScript**, sin dependencias de runtime: panel SSR y API simulada en un proceso (`src/main.ts`), tests con el runner nativo de Node.
 
-## Stack y decisiones arquitectónicas
+- Cobrix solo habla **HTTP** con el administrador; no lee la SQLite del ISP.
+- ISP = fuente de verdad; Cobrix **reconcilia** en corridas (**no adivinar**: respuestas raras, exoneradas, abonos parciales → motivo en detalle, sin marcar pagada sin evidencia).
+- **`data/cobrix.sqlite`**: `empresa`, `proveedor`, `cliente`, `contrato_proveedor`, `factura`, `corrida`, `corrida_detalle`, `historial_cliente`; montos en centavos.
+- Token Bearer en memoria; contraseña del proveedor cifrada en reposo.
+- Importación idempotente por `(proveedor_id, id_cuota_proveedor)`; simulación registra corrida/detalle sin escribir clientes/facturas.
+- Pagadas según §4; anulaciones en el ISP se realinean en la siguiente corrida.
+- Corrida automática en `America/Caracas`; transacciones SQLite en mutaciones de dominio.
 
-Seguí el esqueleto del zip: **Node 24 + TypeScript sin dependencias de runtime**. Arranqué desde `src/main.ts` con panel SSR y API simulada en el mismo proceso porque el enunciado ya venía así y me permitía cerrar criterios de aceptación rápido con `node:sqlite` y tests nativos.
+Sync en `src/cobrix/sync/`; panel en `src/web/`.
 
-**Límites que me impuse (caso real Cobrix):**
+## Uso de Cursor (IA)
 
-- Cobrix **no** lee `data/billing-api.sqlite`; solo habla HTTP con el administrador, como con un ISP real.
-- ISP = fuente de verdad del devengo/cobro; Cobrix **reconcilia** en corridas. Regla de oro: **no adivinar** (estados raros, filas incoherentes, exoneradas, abonos parciales → registrar motivo, no marcar pagada a ciegas).
-- Dos bases: SQLite del simulador (intocable en `src/billing-api/`) y **`data/cobrix.sqlite`** con dominio en español: `empresa`, `proveedor`, `cliente`, `contrato_proveedor`, `factura`, `corrida`, `corrida_detalle`, `historial_cliente`.
-- Montos en **centavos** (`INTEGER`), moneda USD en UI.
-- Login Bearer (~2 h); token en **memoria** en el cliente HTTP; contraseña del proveedor **cifrada en reposo** (`COBRIX_MASTER_KEY` en Render; ver tabla de variables arriba para local).
-- Importación **idempotente** por `(proveedor_id, id_cuota_proveedor)`. Simulación escribe corrida + detalle pero **no** clientes/facturas.
-- Pagadas: solo con evidencia del libro (§4). Anulación en el ISP: realinear en la siguiente corrida (reabrir factura si hace falta) y dejar rastro en historial.
-- Corrida automática: hora en `America/Caracas`, import + pagadas (no simulación); `ultima_corrida_automatica_fecha` evita duplicar el mismo día tras reinicio.
-- Transacciones SQLite en operaciones de negocio; corrida fallida al inicio (p. ej. credenciales) queda en `fallida` sin mutar dominio.
+Exploración del repo, tests de aceptación, panel y despliegue. Validación con `npm test`, `npm run typecheck` y pruebas manuales en Swagger.
 
-**Sync:** lógica en `src/cobrix/sync/` (importación, pagadas, filtros alineados con §4). Panel en `src/web/` (rutas en `app.ts`, layout/estilos en `layout.ts`).
+Donde corregí o decidí yo:
 
-## Uso de Cursor (IA) y dónde tuve que corregir o decidir yo
+- **Reglas §4:** tests de aceptación (import + ciclo pagos/anulación) antes de cerrar UX; cada exclusión/pago con fila en `corrida_detalle`.
+- **Modales:** bug en confirmación (borrar importados): el cierre del diálogo cancelaba el POST; solución con `formToSubmit` en el handler.
+- **Producción:** proxy **`/sim`** para Swagger/OpenAPI en el mismo host (enlaces directos a `127.0.0.1:4310` no sirven en Render).
+- **Marca:** orientación del SVG con un flip vertical sobre el trazado escalado; paleta turquesa→azul en el colibrí; botones primarios con texto blanco.
 
-Usé Cursor como en el día a día que describe el correo: explorar el zip, nombrar cosas como el enunciado, bosquejar tests de aceptación y acelerar UI. **Yo revisé todo** con `npm test`, `npm run typecheck` y pruebas manuales contra Swagger.
+## Punto diferencial
 
-Puntos donde la IA propuso y **yo ajusté con criterio de ingeniero:**
+- **UI/UX:** identidad Cobrix (paleta, menú flotante, modales de confirmación, colibrí en cabecera y diálogos).
+- **Render:** demo pública, health check, Swagger vía `/sim`.
+- **Operación:** detalle de corrida fila a fila e historial por cliente (motivo de cada cuota).
 
-- **Clasificación API / reglas §4:** prioricé tests explícitos (aceptación import + ciclo completo pagos/anulación) antes de pulir pantallas; no acepté atajos que “parecían” cuadrar sin fila en `corrida_detalle`.
-- **Modales de confirmación:** detecté un bug al confirmar (p. ej. borrar importados): el cierre del diálogo anulaba el POST; lo corregí guardando `formToSubmit` en el closure, no el parche superficial que sugería el asistente.
-- **Render / evaluador remoto:** decidí proxy **`/sim`** en el panel para Swagger y OpenAPI en el mismo host; la IA a veces enlazaba `127.0.0.1:4310` en HTML, inútil en producción.
-- **Colibrí / marca:** el SVG venía con transform de export; probamos espejos y giros hasta que **un solo flip vertical** sobre el trazado escalado fuera el criterio visual correcto (la IA interpretaba mal el dibujo varias veces).
-- **UX:** paleta turquesa → degradado (sin dominar rosa/violeta en el logo), botones primarios con **texto blanco**, modales con texto centrado — decisiones mías tras ver el panel, no copiar capturas pixel a pixel.
+## Con más tiempo
 
-## Punto diferencial (extra)
-
-1. **UI/UX:** panel con identidad Cobrix (color, menú flotante, confirmaciones/alertas modales, colibrí en cabecera y diálogos), pensado para operador de cobranza, no copia del esqueleto gris.
-2. **Despliegue Render:** demo pública con blueprint, health check y Swagger accesible vía `/sim` para quien evalúa sin Node local.
-
-Además, el detalle de corrida **fila a fila** y el **historial por cliente** ayudan a ver *por qué* se importó, excluyó o marcó pagada cada cuota (no solo contadores).
-
-## Con más tiempo (si la aplicación creciera)
-
-- Cola de trabajos (Redis/SQS) con reintentos y backoff para corridas largas; el scheduler actual es adecuado para la prueba, no para millones de cuotas.
-- Observabilidad: métricas y trazas por corrida, alertas si una sync falla en producción.
-- Tests E2E del panel (Playwright) además de los 30 tests Node actuales.
-- Front con componentes (React + Tailwind/shadcn) si el producto escala; mantendría el dominio en `src/cobrix` y trataría el panel como cliente.
-- Persistencia en Render (disco) o Postgres si Cobrix deja de ser SQLite embebido; vault gestionado para secretos.
-- Multi-tenant, HA y colas distribuidas como capa de plataforma sobre el mismo núcleo de sync.
-
-## Qué dejé fuera a propósito
-
-- No modifiqué `src/billing-api/` (requisito del enunciado).
-- No migré a otro stack: el tiempo iba a reglas, robustez y operación, no a reescribir el panel en React.
+- Cola de trabajos con reintentos para corridas largas.
+- Observabilidad (métricas/trazas por corrida).
+- E2E del panel (Playwright).
+- Panel en React/Tailwind manteniendo `src/cobrix` como núcleo.
+- Postgres o disco persistente en Render; secretos en vault gestionado.
