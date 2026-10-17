@@ -2,7 +2,7 @@
 
 Integración de Cobrix con la API de un **administrador de facturas** ISP: importación de clientes y facturas, reconciliación de pagados y panel operativo.
 
-**Enunciado:** [`docs/ENUNCIADO.md`](docs/ENUNCIADO.md) · **Decisiones:** [`docs/DECISIONES.md`](docs/DECISIONES.md)
+**Enunciado:** [`docs/ENUNCIADO.md`](docs/ENUNCIADO.md) · **Nota de entrega (decisiones, IA, demo):** [`NOTA.md`](NOTA.md)
 
 ## Evaluador — ejecutar en Render (sin Node local)
 
@@ -12,7 +12,7 @@ Integración de Cobrix con la API de un **administrador de facturas** ISP: impor
 2. **Apply** en el blueprint (`render.yaml`).
 3. Abrir la URL **Live** del servicio.
 
-Guía detallada: [`docs/EVALUADOR.md`](docs/EVALUADOR.md) · Credenciales: `cobrix` / `cobrix-sandbox`.
+Demo y guía del evaluador: [`NOTA.md`](NOTA.md) · Credenciales: `cobrix` / `cobrix-sandbox`.
 
 ## Requisitos
 
@@ -60,9 +60,7 @@ La **corrida automática** (si está activa en configuración) ejecuta importaci
 
 ## Despliegue en Render (demo pública)
 
-Blueprint en [`render.yaml`](render.yaml). Pasos detallados: [`docs/DEPLOY-RENDER.md`](docs/DEPLOY-RENDER.md).
-
-Tras desplegar, entrega en la nota de la prueba la **URL del panel** (`https://…onrender.com`). Credenciales del proveedor: igual que en local.
+Blueprint en [`render.yaml`](render.yaml). URL demo y Swagger `/sim`: [`NOTA.md`](NOTA.md).
 
 ## Pruebas
 

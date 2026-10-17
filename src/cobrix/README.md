@@ -6,4 +6,4 @@
 - **Corridas:** `sync/importacion.ts`, `sync/pagadas.ts`
 - **Corrida automática:** `corrida-automatica.ts` (Caracas, import + pagadas)
 
-Diseño: [`docs/DECISIONES.md`](../../docs/DECISIONES.md). Panel: [`src/web/app.ts`](../web/app.ts).
+Nota de entrega / diseño: [`NOTA.md`](../../NOTA.md). Panel: [`src/web/app.ts`](../web/app.ts).

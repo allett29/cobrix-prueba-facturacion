@@ -29,4 +29,4 @@ services:
       - key: COBRIX_MASTER_KEY
         generateValue: true
     # Plan Free: sin disco persistente; data/ del repo + cobrix.sqlite generada al arrancar.
-    # Plan de pago: añade disk en /var/data y COBRIX_DB / BILLING_API_DB (ver docs/DEPLOY-RENDER.md).
+    # Plan de pago: añade disk en /var/data y COBRIX_DB / BILLING_API_DB (ver NOTA.md).

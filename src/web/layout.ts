@@ -46,21 +46,55 @@ export const CONTRACT_STATUS_TONE: Record<string, Tone> = {
 	ACTIVO: 'ok', CORTADO: 'bad', CORTESIA: 'info', RETIRADO: 'mute', RECHAZADO: 'mute', ANULADO: 'mute', status_unrecognized: 'bad',
 }
 
-/** Colibrí Cobrix (marca del encabezado). Gradiente = paleta del panel. */
-const BRAND_MARK_SVG = `<svg class="brand-mark" viewBox="0 0 96 72" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-<defs>
-<linearGradient id="cobrix-mark-fill" x1="48" y1="4" x2="48" y2="68" gradientUnits="userSpaceOnUse">
-<stop offset="0%" stop-color="#02ff92"/>
-<stop offset="38%" stop-color="#01dfb9"/>
-<stop offset="68%" stop-color="#00bee3"/>
+/** Trazado escalado; un solo espejo vertical (sin scale Y negativo duplicado). */
+const COLIBRI_PATH_LAYER = 'scale(0.1, 0.1)'
+const COLIBRI_FLIP_Y = 'translate(324.5 192.5) scale(1,-1) translate(-324.5 -192.5)'
+const COLIBRI_BODY =
+	'M2342 2793 c-12 -31 -8 -304 7 -393 52 -321 231 -588 519 -774 106 -69 106 -69 -58 -266 -239 -288 -300 -368 -300 -399 0 -43 23 -46 163 -21 67 12 185 33 262 46 245 43 362 91 461 191 64 64 98 127 124 232 38 151 62 190 164 266 99 73 147 124 179 188 29 60 33 62 172 102 262 73 275 78 263 90 -3 3 -91 -1 -197 -9 -105 -9 -198 -13 -206 -10 -8 4 -23 22 -32 42 -22 46 -77 101 -119 118 -18 8 -64 14 -101 14 -111 0 -154 -30 -306 -208 -42 -51 -84 -92 -91 -92 -7 0 -51 41 -97 92 -46 50 -91 98 -100 107 -8 9 -73 79 -144 156 -71 77 -155 167 -186 200 -31 33 -69 74 -85 92 -196 213 -237 253 -260 253 -14 0 -28 -8 -32 -17z'
+const COLIBRI_BEAK =
+	'M4090 1634 c-14 -2 -96 -8 -182 -12 -146 -8 -159 -11 -190 -34 -53 -41 -85 -96 -110 -191 -23 -87 -23 -89 -4 -103 26 -19 171 -18 254 1 34 8 86 27 114 41 135 69 294 222 286 276 -3 21 -8 23 -73 24 -38 1 -81 0 -95 -2z'
+
+function colibriDefs(id: string): string {
+	return `<defs>
+<linearGradient id="cobrix-body-${id}" x1="0" y1="385" x2="649" y2="0" gradientUnits="userSpaceOnUse">
+<stop offset="0%" stop-color="#01dfb9"/>
+<stop offset="45%" stop-color="#00bee3"/>
 <stop offset="100%" stop-color="#00aef7"/>
 </linearGradient>
-</defs>
-<g class="brand-mark-float">
-<path class="brand-mark-body" fill="url(#cobrix-mark-fill)" d="M 16 54 C 11 42 12 26 24 16 C 32 10 36 14 38 20 C 40 14 46 12 52 16 C 56 20 57 26 55 30 L 84 28.5 L 84 33.5 L 55 35 C 56 44 50 52 40 56 C 30 58 20 58 16 54 Z"/>
-<path class="brand-mark-wing" fill="url(#cobrix-mark-fill)" d="M 42 36 C 50 40 62 50 68 58 C 58 54 46 44 42 36 Z"/>
+<linearGradient id="cobrix-beak-${id}" x1="0" y1="0" x2="1" y2="1">
+<stop offset="0%" stop-color="#00bee3"/>
+<stop offset="100%" stop-color="#00aef7"/>
+</linearGradient>
+<linearGradient id="cobrix-stroke-${id}" x1="0" y1="385" x2="649" y2="0" gradientUnits="userSpaceOnUse">
+<stop offset="0%" stop-color="#01dfb9"/>
+<stop offset="55%" stop-color="#00bee3"/>
+<stop offset="100%" stop-color="#00aef7"/>
+</linearGradient>
+</defs>`
+}
+
+function colibriSvg(id: string, mode: 'header' | 'dialog'): string {
+	const cycle = mode === 'dialog' ? ' colibri-mark--cycle' : ''
+	const headerAnim = mode === 'header' ? ' brand-mark-anim' : ''
+	const draw =
+		mode === 'dialog'
+			? `<path class="colibri-draw colibri-draw-body" pathLength="1" d="${COLIBRI_BODY}"/>
+<path class="colibri-draw colibri-draw-beak" pathLength="1" d="${COLIBRI_BEAK}"/>`
+			: ''
+	return `<svg class="colibri-mark${cycle}${headerAnim}" viewBox="0 0 649 385" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" preserveAspectRatio="xMidYMid meet">
+${colibriDefs(id)}
+<g transform="${COLIBRI_FLIP_Y}">
+<g transform="${COLIBRI_PATH_LAYER}">
+${draw}
+<path class="colibri-paint colibri-paint-body" d="${COLIBRI_BODY}" fill="url(#cobrix-body-${id})"/>
+<path class="colibri-paint colibri-paint-beak" d="${COLIBRI_BEAK}" fill="url(#cobrix-beak-${id})"/>
+</g>
 </g>
 </svg>`
+}
+
+const BRAND_MARK_SVG = colibriSvg('head', 'header')
+const DIALOG_COLIBRI_SVG = colibriSvg('dlg', 'dialog')
 
 const NAV_ICON = {
 	resumen:
@@ -152,6 +186,7 @@ export function layout(input: {
 </div>
 <div class="dialog-overlay" id="cobrix-dialog" hidden>
 	<div class="dialog tone-info" id="cobrix-dialog-panel" role="dialog" aria-modal="true" aria-labelledby="cobrix-dialog-title">
+		<div class="dialog-mark">${DIALOG_COLIBRI_SVG}</div>
 		<h2 class="dialog-title" id="cobrix-dialog-title">Aviso</h2>
 		<p class="dialog-body" id="cobrix-dialog-body"></p>
 		<div class="dialog-actions">
@@ -442,7 +477,7 @@ export const CSS = `
 	--accent-5: #d064ff;
 	--gradient-a: #c7f7ea;
 	--gradient-b: #c2ebfb;
-	--gradient-brand: linear-gradient(135deg, var(--accent-2) 0%, var(--accent-4) 55%, var(--accent-5) 100%);
+	--gradient-brand: linear-gradient(135deg, var(--accent-2) 0%, var(--accent-3) 38%, var(--accent-4) 72%, var(--accent-5) 100%);
 	/* Panel solo modo claro: blanco base, degradado suave en el lienzo */
 	--gradient-surface: linear-gradient(
 		165deg,
@@ -460,7 +495,7 @@ export const CSS = `
 	--primary: #0090c8;
 	--primary-hover: #007aa8;
 	--primary-soft: color-mix(in srgb, var(--gradient-b) 55%, white);
-	--primary-fg: #061018;
+	--primary-fg: #ffffff;
 	--ok: #067a5c;
 	--ok-bg: color-mix(in srgb, var(--accent-1) 18%, white);
 	--warn: #8a5a00;
@@ -496,22 +531,49 @@ a:hover { color: var(--primary-hover); text-decoration: underline; }
 	padding: 14px clamp(16px, 2.5vw, 28px); background: var(--surface); border-bottom: 1px solid var(--line);
 	position: sticky; top: 0; z-index: 20; width: 100%;
 }
-.brand { display: flex; gap: 10px; align-items: center; }
+.brand { display: flex; gap: 10px; align-items: center; min-width: 0; flex-shrink: 0; }
 .brand small { display: block; color: var(--muted); font-size: 12px; }
-.mark { width: 44px; height: 34px; flex-shrink: 0; display: grid; place-items: center; border-radius: 8px; background: transparent; }
-.brand-mark { width: 100%; height: auto; display: block; overflow: visible; }
-.brand-mark-float { transform-origin: 48px 36px; animation: brand-mark-hover 3.2s var(--nav-dock-ease) infinite; }
-.brand-mark-wing { transform-origin: 44px 38px; animation: brand-mark-flap 1.15s ease-in-out infinite alternate; }
+.mark {
+	width: 68px; height: 40px; flex: 0 0 68px; flex-shrink: 0;
+	display: block; position: relative; overflow: hidden; border-radius: 6px;
+}
+.app-header .brand .colibri-mark {
+	width: 68px; height: 40px; display: block; max-width: 100%; overflow: hidden;
+}
+.colibri-mark { display: block; overflow: hidden; vertical-align: middle; }
+.brand-mark-anim { animation: brand-mark-hover 3.2s var(--nav-dock-ease) infinite; }
 @keyframes brand-mark-hover {
 	0%, 100% { transform: translateY(0); }
 	50% { transform: translateY(-2px); }
 }
-@keyframes brand-mark-flap {
-	from { transform: rotate(0deg); }
-	to { transform: rotate(-14deg); }
+.brand:hover .brand-mark-anim { animation-duration: 2.4s; }
+.dialog-mark { width: min(100%, 128px); margin: 0 auto 6px; }
+.dialog-mark .colibri-mark { width: 100%; height: auto; display: block; }
+.colibri-mark--cycle .colibri-draw {
+	fill: none;
+	stroke: url(#cobrix-stroke-dlg);
+	stroke-width: 42;
+	stroke-linecap: round;
+	stroke-linejoin: round;
+	stroke-dasharray: 1;
+	stroke-dashoffset: 1;
+	animation: colibri-stroke-draw 3.8s ease-in-out infinite;
 }
-.brand:hover .brand-mark-float { animation-duration: 2.4s; }
-.brand:hover .brand-mark-wing { animation-duration: 0.75s; }
+.colibri-mark--cycle .colibri-draw-beak { stroke: url(#cobrix-beak-dlg); animation-delay: 0.12s; }
+.colibri-mark--cycle .colibri-paint { opacity: 0; animation: colibri-paint-in 3.8s ease-in-out infinite; }
+.colibri-mark--cycle .colibri-paint-beak { animation-delay: 0.12s; }
+@keyframes colibri-stroke-draw {
+	0% { stroke-dashoffset: 1; opacity: 1; }
+	36% { stroke-dashoffset: 0; opacity: 1; }
+	46% { stroke-dashoffset: 0; opacity: 0; }
+	88% { stroke-dashoffset: 0; opacity: 0; }
+	100% { stroke-dashoffset: 1; opacity: 1; }
+}
+@keyframes colibri-paint-in {
+	0%, 34% { opacity: 0; }
+	44%, 86% { opacity: 1; }
+	100% { opacity: 0; }
+}
 .header-meta { margin-left: auto; text-align: right; display: grid; gap: 4px; min-width: 0; }
 .header-tenant { font-size: 13px; font-weight: 600; color: var(--fg); }
 .clock { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: baseline; justify-content: flex-end; color: var(--muted); font-size: 13px; }
@@ -666,13 +728,13 @@ body.dialog-open { overflow: hidden; }
 .dialog { width: min(100%, 420px); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px 14px; box-shadow: 0 18px 50px color-mix(in srgb, #12151a 14%, transparent); display: grid; gap: 10px; border-top: 3px solid var(--info); }
 .dialog.tone-warn { border-top-color: var(--warn); } .dialog.tone-bad { border-top-color: var(--bad); }
 .dialog.tone-ok { border-top-color: var(--ok); } .dialog.tone-info { border-top-color: var(--info); }
-.dialog-title { margin: 0; font-size: 16px; font-weight: 600; color: var(--fg); }
-.dialog-body { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; }
+.dialog-title { margin: 0; font-size: 16px; font-weight: 600; color: var(--fg); text-align: center; }
+.dialog-body { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.55; text-align: center; }
 .dialog-actions { display: flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; margin-top: 4px; }
 .btn { font: 600 13.5px var(--font); border: 1px solid var(--line); background: var(--surface); color: var(--fg); padding: 7px 14px; border-radius: 7px; cursor: pointer; }
 .btn:hover { background: var(--sunken); }
-.btn.primary { background: var(--gradient-brand); border-color: transparent; color: var(--primary-fg); box-shadow: 0 1px 10px color-mix(in srgb, var(--accent-4) 30%, transparent); }
-.btn.primary:hover { filter: brightness(1.05); background: var(--gradient-brand); }
+.btn.primary { background: var(--gradient-brand); border-color: transparent; color: var(--primary-fg); text-shadow: 0 1px 1px color-mix(in srgb, #061018 22%, transparent); box-shadow: 0 1px 10px color-mix(in srgb, var(--accent-4) 30%, transparent); }
+.btn.primary:hover { filter: brightness(1.05); background: var(--gradient-brand); color: var(--primary-fg); }
 .btn.small { padding: 3px 10px; font-size: 12.5px; }
 .btn:focus-visible, input:focus-visible, select:focus-visible, a:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
 .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
@@ -724,6 +786,7 @@ details summary { cursor: pointer; font-weight: 600; }
 }
 @media (prefers-reduced-motion: reduce) {
 	.nav-dock, .nav-dock-label, .page { transition: none; }
-	.brand-mark-float, .brand-mark-wing { animation: none; }
+	.brand-mark-anim { animation: none; }
+	.colibri-mark--cycle .colibri-draw, .colibri-mark--cycle .colibri-paint { animation: none; opacity: 1; stroke-dashoffset: 0; }
 }
 `
