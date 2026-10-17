@@ -31,7 +31,23 @@ import { ejecutarActualizacionPagadas } from '../cobrix/sync/pagadas.ts'
 import type { Corrida, Proveedor, ProveedorEditable } from '../cobrix/types.ts'
 import { currentPeriod, today } from '../shared/dates.ts'
 
-import { CONTRACT_STATUS_TONE, CSS, date, dateTime, dialogConfirm, esc, html, layout, period, pill, raw, usd, type Raw, type Tone } from './layout.ts'
+import {
+	CONTRACT_STATUS_TONE,
+	CSS,
+	date,
+	dateTime,
+	dialogAlert,
+	dialogConfirm,
+	esc,
+	html,
+	layout,
+	period,
+	pill,
+	raw,
+	usd,
+	type Raw,
+	type Tone,
+} from './layout.ts'
 
 export interface AppDeps {
 	readonly simulatorUrl: string
@@ -120,10 +136,15 @@ export function createApp(deps: AppDeps): Server {
 		const text = url.searchParams.get('msg')
 		const tone = url.searchParams.get('tone') as Tone | null
 		const flash = text && tone ? { tone, text } : undefined
-		const page = (title: string, active: string, body: Raw) =>
-			sendHtml(res, 200, layout({ title, active, body, flash, company: companyName() }))
+		const page = (
+			title: string,
+			active: string,
+			body: Raw,
+			pageAlert?: { tone: Tone; text: string; title?: string },
+		) => sendHtml(res, 200, layout({ title, active, body, flash, pageAlert, company: companyName() }))
 
 		if (req.method === 'GET') {
+			if (path === '/health') return send(res, 200, 'ok', 'text/plain; charset=utf-8')
 			if (path === '/app.css') return send(res, 200, `${CSS}\npre.doc { margin: 0; white-space: pre-wrap; font: 13.5px/1.6 var(--mono); color: var(--fg); max-width: 110ch; }`, 'text/css; charset=utf-8')
 			if (path === '/enunciado') return page('Enunciado', '', assignmentPage(deps))
 			if (path === '/') return page('Resumen', '/', resumenPage(deps))
@@ -131,7 +152,15 @@ export function createApp(deps: AppDeps): Server {
 			if (path === '/sincronizacion') return page('Sincronización', '/sincronizacion', syncPage(db))
 			if (path === '/configuracion') return page('Configuración', '/configuracion', configPage(db))
 			const corridaMatch = /^\/sincronizacion\/(\d+)$/.exec(path)
-			if (corridaMatch) return page('Detalle de corrida', '/sincronizacion', corridaPage(db, Number(corridaMatch[1])))
+			if (corridaMatch) {
+				const corridaId = Number(corridaMatch[1])
+				const corrida = leerCorrida(db, corridaId)
+				const pageAlert =
+					!flash && corrida?.estado === 'fallida' && corrida.error
+						? { tone: 'bad' as const, text: corrida.error, title: 'Corrida fallida' }
+						: undefined
+				return page('Detalle de corrida', '/sincronizacion', corridaPage(db, corridaId), pageAlert)
+			}
 			const clienteMatch = /^\/clientes\/(\d+)$/.exec(path)
 			if (clienteMatch) return page('Expediente', '/clientes', expedientePage(db, Number(clienteMatch[1])))
 		}
@@ -197,7 +226,7 @@ function resumenPage(deps: AppDeps): Raw {
 					<dt>Proveedor</dt><dd>${proveedor.nombreVisible}</dd>
 					<dt>URL de la API</dt><dd class="mono">${proveedor.urlApi}</dd>
 					<dt>Documentación de la API</dt>
-					<dd><a href="${deps.simulatorUrl}/docs" target="_blank" rel="noopener">Swagger</a> · <a href="${deps.simulatorUrl}/openapi.json" target="_blank" rel="noopener">openapi.json</a></dd>
+					<dd><a href="${deps.simulatorUrl}/docs" target="_blank" rel="noopener" ${dialogAlert('Abrir Swagger del simulador ISP en una pestaña nueva.', 'info', 'Documentación')}>Swagger</a> · <a href="${deps.simulatorUrl}/openapi.json" target="_blank" rel="noopener" ${dialogAlert('Descargar openapi.json del simulador en una pestaña nueva.', 'info', 'OpenAPI')}>openapi.json</a></dd>
 					<dt>Estados que se importan</dt><dd>${proveedor.estadosImportables.join(', ')}</dd>
 					<dt>Ventana</dt><dd>${textoVentanaProveedor(proveedor)}</dd>
 					<dt>Corrida automática</dt><dd>${textoCorridaAutomatica(proveedor)}</dd>
@@ -219,7 +248,12 @@ function clientesPage(db: DatabaseSync, busqueda: string): Raw {
 				<h1>Clientes</h1>
 				<p>Clientes creados por el sync del administrador. Un cliente por cédula o RIF: si el titular tiene varios contratos, se agrupan aquí.</p>
 			</div>
-			<span class="head-count">${filas.length} clientes</span>
+			<div class="actions head-actions">
+				<span class="head-count">${filas.length} clientes</span>
+				${filas.length === 0 && !busqueda.trim()
+					? html`<button type="button" class="btn" ${dialogAlert('Ve a Sincronización → Simular importación para revisar contadores, luego Importar. También puedes usar los botones del Resumen.', 'info', 'Sin clientes')}>¿Cómo importar?</button>`
+					: ''}
+			</div>
 		</div>
 		<form class="search" method="get" action="/clientes">
 			<input type="search" name="q" value="${busqueda}" placeholder="Nombre, cédula o RIF" />
@@ -259,7 +293,9 @@ function filaCliente(fila: FilaClienteResumen): Raw {
 function expedientePage(db: DatabaseSync, clienteId: number): Raw {
 	const cliente = leerCliente(db, clienteId)
 	if (!cliente) {
-		return html`<div class="head"><h1>Cliente no encontrado</h1></div><p><a href="/clientes">Volver</a></p>`
+		return html`<div class="head"><h1>Cliente no encontrado</h1></div>
+			<p class="muted">El identificador no existe o los datos importados fueron borrados.</p>
+			<p><a href="/clientes">← Volver a clientes</a></p>`
 	}
 	const contratos = listarContratosPorCliente(db, clienteId)
 	const facturas = listarFacturasPorCliente(db, clienteId)
@@ -309,7 +345,12 @@ function expedientePage(db: DatabaseSync, clienteId: number): Raw {
 			</section>
 		</div>
 		<section class="card">
-			<header><h2>Facturas</h2><span class="muted">Una factura por cuota del administrador</span></header>
+			<header><h2>Facturas</h2>
+				<span class="muted">Una factura por cuota del administrador</span>
+				${facturas.length === 0
+					? html`<button type="button" class="btn" ${dialogAlert('Este cliente no tiene facturas en Cobrix. Importa cuotas desde Sincronización si el contrato tiene deuda pendiente en el ISP.', 'info', 'Sin facturas')}>¿Por qué está vacío?</button>`
+					: ''}
+			</header>
 			<div class="body table-wrap">
 				<table>
 					<thead><tr>
@@ -354,6 +395,9 @@ function syncPage(db: DatabaseSync): Raw {
 				<h1>Sincronización</h1>
 				<p>La importación lee cada contrato del administrador y crea una factura abierta por cuota pendiente. La actualización de pagadas consulta el libro de cuotas del administrador y marca pagadas las que el ISP ya cobró.</p>
 			</div>
+			${corridas.length === 0
+				? html`<button type="button" class="btn" ${dialogAlert('Empieza con Simular importación para ver contadores sin escribir en Cobrix. Revisa la configuración del proveedor si la conexión falla.', 'info', 'Primera corrida')}>Guía rápida</button>`
+				: ''}
 		</div>
 		<div class="grid2-cards">
 			<section class="card">
@@ -380,7 +424,7 @@ function syncPage(db: DatabaseSync): Raw {
 		<section class="card">
 			<header>
 				<h2>Corridas</h2>
-				<form method="post" action="/sincronizacion/borrar" class="inline" ${dialogConfirm('¿Borrar todos los datos importados? Esta acción no se puede deshacer.', 'bad')}>
+				<form method="post" action="/sincronizacion/borrar" class="inline" ${dialogConfirm('¿Borrar todos los datos importados? Esta acción no se puede deshacer.', 'bad', 'Borrar importados')}>
 					<button type="submit" class="btn">Borrar datos importados</button>
 				</form>
 			</header>
@@ -391,7 +435,9 @@ function syncPage(db: DatabaseSync): Raw {
 function corridaPage(db: DatabaseSync, corridaId: number): Raw {
 	const corrida = leerCorrida(db, corridaId)
 	if (!corrida) {
-		return html`<div class="head"><h1>Corrida no encontrada</h1></div><p><a href="/sincronizacion">Volver</a></p>`
+		return html`<div class="head"><h1>Corrida no encontrada</h1></div>
+			<p class="muted">Puede haber sido eliminada al borrar datos importados.</p>
+			<p><a href="/sincronizacion">← Volver a sincronización</a></p>`
 	}
 	const detalle = listarDetalleCorrida(db, corridaId)
 	const etiquetas = corrida.tipo === 'importacion' ? ETIQUETAS_CONTADORES_IMPORT : ETIQUETAS_CONTADORES_PAGADAS
@@ -437,7 +483,7 @@ function configPage(db: DatabaseSync): Raw {
 				<p>Datos de la empresa y del administrador de facturas, con las mismas opciones del formulario «Configurar proveedor» de Cobrix.</p>
 			</div>
 		</div>
-		<form method="post" action="/configuracion/empresa" ${dialogConfirm('¿Guardar datos de la empresa?', 'info')}>
+		<form method="post" action="/configuracion/empresa" ${dialogConfirm('¿Guardar datos de la empresa?', 'info', 'Guardar empresa')}>
 			<section class="card">
 				<header><h2>Empresa</h2></header>
 				<div class="body grid2">
@@ -449,10 +495,10 @@ function configPage(db: DatabaseSync): Raw {
 				<div class="body"><button type="submit" class="btn primary">Guardar empresa</button></div>
 			</section>
 		</form>
-		<form method="post" action="/configuracion/proveedor">
+		<form method="post" action="/configuracion/proveedor" id="config-proveedor" data-validate-estados="1">
 			<section class="card">
 				<header><h2>Administrador de facturas</h2>
-					<button type="submit" formaction="/configuracion/probar" class="btn" ${dialogConfirm('¿Probar conexión con el administrador de facturas?', 'info')}>Probar conexión</button>
+					<button type="submit" formaction="/configuracion/probar" class="btn" ${dialogConfirm('¿Probar conexión con el administrador de facturas? Se usará la URL y el usuario del formulario; contraseña vacía = la guardada.', 'info', 'Probar conexión')}>Probar conexión</button>
 				</header>
 				<div class="body grid2">
 					<label class="field">Nombre visible<input type="text" name="prov_nombre" required value="${proveedor.nombreVisible}" /></label>
@@ -493,17 +539,26 @@ function configPage(db: DatabaseSync): Raw {
 				</div>
 				<p class="note">Fijo para este proveedor, como en Cobrix: solo cuotas pendientes, vencimiento del proveedor y corrida automática opcional. Reloj lateral = Caracas; una ejecución por día.</p>
 				<div class="body actions">
-					<button type="submit" class="btn primary" ${dialogConfirm('¿Guardar configuración del proveedor?', 'warn')}>Guardar proveedor</button>
+					<button type="submit" class="btn primary" ${dialogConfirm('¿Guardar configuración del proveedor? La próxima importación usará estas reglas.', 'warn', 'Guardar proveedor')}>Guardar proveedor</button>
 					<span class="muted">Última modificación: ${dateTime(proveedor.actualizadoEn)}</span>
 				</div>
 			</section>
-		</form>`
+		</form>
+		<section class="card card-danger">
+			<header><h2>Datos importados</h2></header>
+			<div class="body">
+				<p class="muted">Elimina clientes, facturas, contratos espejados e historial de Cobrix. No modifica la configuración ni la base del simulador ISP.</p>
+				<form method="post" action="/configuracion/borrar" class="inline" ${dialogConfirm('¿Borrar todos los datos importados? Esta acción no se puede deshacer.', 'bad', 'Borrar importados')}>
+					<button type="submit" class="btn">Borrar datos importados</button>
+				</form>
+			</div>
+		</section>`
 }
 
 function accionesResumen(): Raw {
 	return html`
-		<form method="post" action="/sincronizacion/importar" class="inline" ${dialogConfirm('Se importarán cuotas desde el ISP según la configuración actual.', 'warn')}><button type="submit" class="btn primary">Importar cuotas</button></form>
-		<form method="post" action="/sincronizacion/pagadas" class="inline" ${dialogConfirm('Se marcarán pagadas las facturas que el ISP ya cobró.', 'warn')}><button type="submit" class="btn">Actualizar pagadas</button></form>`
+		<form method="post" action="/sincronizacion/importar" class="inline" ${dialogConfirm('Se importarán cuotas desde el ISP según la configuración actual.', 'warn', 'Importar cuotas')}><button type="submit" class="btn primary">Importar cuotas</button></form>
+		<form method="post" action="/sincronizacion/pagadas" class="inline" ${dialogConfirm('Se marcarán pagadas las facturas que el ISP ya cobró.', 'warn', 'Actualizar pagadas')}><button type="submit" class="btn">Actualizar pagadas</button></form>`
 }
 
 function tablaCorridas(corridas: readonly Corrida[]): Raw {

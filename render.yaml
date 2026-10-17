@@ -6,9 +6,11 @@ services:
     runtime: node
     plan: free
     region: oregon
+    branch: main
+    autoDeploy: true
     buildCommand: npm install
     startCommand: npm start
-    healthCheckPath: /
+    healthCheckPath: /health
     envVars:
       - key: NODE_VERSION
         value: '24.11.0'

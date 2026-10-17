@@ -92,11 +92,25 @@ function navDockLinks(active: string): string {
 }
 
 /** Atributos para confirmar antes de enviar un formulario o botón submit. */
-export function dialogConfirm(message: string, tone: Tone = 'warn'): Raw {
-	return raw(`data-dialog="confirm" data-dialog-tone="${tone}" data-dialog-message="${esc(message)}"`)
+export function dialogConfirm(message: string, tone: Tone = 'warn', title?: string): Raw {
+	const t = title ? ` data-dialog-title="${esc(title)}"` : ''
+	return raw(`data-dialog="confirm" data-dialog-tone="${tone}" data-dialog-message="${esc(message)}"${t}`)
 }
 
-export function layout(input: { title: string; active: string; body: Raw; flash?: { tone: Tone; text: string } | undefined; company: string }): string {
+/** Atributos para abrir un aviso al hacer clic (botón type="button" o enlace). */
+export function dialogAlert(message: string, tone: Tone = 'info', title?: string): Raw {
+	const t = title ? ` data-dialog-title="${esc(title)}"` : ''
+	return raw(`data-dialog="alert" data-dialog-tone="${tone}" data-dialog-message="${esc(message)}"${t}`)
+}
+
+export function layout(input: {
+	title: string
+	active: string
+	body: Raw
+	flash?: { tone: Tone; text: string } | undefined
+	pageAlert?: { tone: Tone; text: string; title?: string } | undefined
+	company: string
+}): string {
 	return `<!doctype html>
 <html lang="es">
 <head>
@@ -105,7 +119,7 @@ export function layout(input: { title: string; active: string; body: Raw; flash?
 <title>${esc(input.title)} · Prueba de facturación</title>
 <link rel="stylesheet" href="/app.css">
 </head>
-<body${input.flash ? ` data-flash-tone="${esc(input.flash.tone)}" data-flash-text="${esc(input.flash.text)}"` : ''}>
+<body${input.flash ? ` data-flash-tone="${esc(input.flash.tone)}" data-flash-text="${esc(input.flash.text)}"` : ''}${input.pageAlert ? ` data-page-alert-tone="${esc(input.pageAlert.tone)}" data-page-alert-text="${esc(input.pageAlert.text)}"${input.pageAlert.title ? ` data-page-alert-title="${esc(input.pageAlert.title)}"` : ''}` : ''}>
 <header class="app-header">
 	<div class="brand"><span class="mark">${BRAND_MARK_SVG}</span><div><strong>Cobrix</strong><small>Sandbox de facturación</small></div></div>
 	<div class="header-meta">
@@ -317,7 +331,34 @@ export function layout(input: { title: string; active: string; body: Raw; flash?
 	})
 	document.addEventListener('keydown', (e) => {
 		if (overlay.hidden) return
-		if (e.key === 'Escape') close()
+		if (e.key === 'Escape') {
+			e.preventDefault()
+			close()
+		}
+	})
+	const dialogFromEl = (el) => ({
+		tone: el.dataset.dialogTone || 'info',
+		title: el.dataset.dialogTitle || undefined,
+		message: el.dataset.dialogMessage || '',
+	})
+	document.addEventListener('click', (e) => {
+		const el = e.target instanceof Element ? e.target.closest('[data-dialog="alert"]') : null
+		if (!el || el instanceof HTMLButtonElement && el.type === 'submit') return
+		if (el instanceof HTMLInputElement && (el.type === 'submit' || el.type === 'image')) return
+		e.preventDefault()
+		const opts = dialogFromEl(el)
+		const href = el instanceof HTMLAnchorElement ? el.getAttribute('href') : null
+		const external = href && el.getAttribute('target') === '_blank'
+		open({
+			mode: external ? 'confirm' : 'alert',
+			...opts,
+			message: opts.message || (external ? 'Se abrirá en una pestaña nueva.' : ''),
+			onOk: external
+				? () => {
+						window.open(href, '_blank', 'noopener,noreferrer')
+					}
+				: null,
+		})
 	})
 	document.addEventListener('submit', (e) => {
 		const form = e.target
@@ -327,29 +368,41 @@ export function layout(input: { title: string; active: string; body: Raw; flash?
 			return
 		}
 		const sub = e.submitter
-		const node = sub?.dataset?.dialog ? sub : form.dataset?.dialog ? form : null
+		if (form.dataset.validateEstados === '1' && sub instanceof HTMLButtonElement && sub.dataset.dialog === 'confirm') {
+			const checked = form.querySelectorAll('input[name="estados"]:checked').length
+			if (checked === 0) {
+				e.preventDefault()
+				open({
+					mode: 'alert',
+					tone: 'warn',
+					title: 'Configuración incompleta',
+					message: 'Selecciona al menos un estado de contrato que se importará.',
+				})
+				return
+			}
+		}
+		const node = sub instanceof HTMLElement && sub.dataset.dialog ? sub : form.dataset.dialog ? form : null
 		if (!node) return
 		e.preventDefault()
-		const tone = node.dataset.dialogTone || 'warn'
-		const message = node.dataset.dialogMessage || '¿Continuar?'
+		const opts = dialogFromEl(node)
 		const mode = node.dataset.dialog === 'confirm' ? 'confirm' : 'alert'
 		pendingForm = form
+		const formToSubmit = form
+		const submitter = sub
 		open({
 			mode,
-			tone,
-			message,
+			...opts,
 			onOk: mode === 'confirm'
 				? () => {
-						if (!pendingForm) return
-						pendingForm.dataset.dialogBypass = '1'
-						if (sub instanceof HTMLButtonElement && sub.name) {
+						formToSubmit.dataset.dialogBypass = '1'
+						if (submitter instanceof HTMLButtonElement && submitter.name) {
 							const hidden = document.createElement('input')
 							hidden.type = 'hidden'
-							hidden.name = sub.name
-							hidden.value = sub.value
-							pendingForm.appendChild(hidden)
+							hidden.name = submitter.name
+							hidden.value = submitter.value
+							formToSubmit.appendChild(hidden)
 						}
-						pendingForm.requestSubmit(sub ?? undefined)
+						formToSubmit.requestSubmit(submitter ?? undefined)
 					}
 				: null,
 		})
@@ -360,6 +413,19 @@ export function layout(input: { title: string; active: string; body: Raw; flash?
 		open({ mode: 'alert', tone: flashTone || 'info', message: flashText })
 		delete document.body.dataset.flashTone
 		delete document.body.dataset.flashText
+	} else {
+		const pageAlertText = document.body.dataset.pageAlertText
+		if (pageAlertText) {
+			open({
+				mode: 'alert',
+				tone: document.body.dataset.pageAlertTone || 'bad',
+				title: document.body.dataset.pageAlertTitle || undefined,
+				message: pageAlertText,
+			})
+			delete document.body.dataset.pageAlertTone
+			delete document.body.dataset.pageAlertText
+			delete document.body.dataset.pageAlertTitle
+		}
 	}
 })()
 </script>
@@ -574,8 +640,10 @@ h2 { font-size: 16px; margin: 0; }
 .head { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; justify-content: space-between; }
 .head p { margin: 4px 0 0; color: var(--muted); max-width: 80ch; }
 .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; min-width: 0; box-shadow: 0 1px 2px color-mix(in srgb, #12151a 4%, transparent); }
+.card-danger { border-color: color-mix(in srgb, var(--bad) 38%, var(--line)); }
 .card > header { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; padding: 14px 16px; border-bottom: 1px solid var(--line); }
 .card > .body { padding: 16px; display: grid; gap: 14px; }
+.head-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: flex-end; }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
 .tile { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; display: grid; gap: 2px; border-top: 2px solid color-mix(in srgb, var(--accent-3) 45%, transparent); }
 .tile span { color: var(--muted); font-size: 12px; }

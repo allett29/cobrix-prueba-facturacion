@@ -13,6 +13,8 @@ import { after, before, describe, it } from 'node:test'
 import { SANDBOX_API_USER, seedBillingApi } from '../src/billing-api/seed.ts'
 import { createBillingApiServer, type BillingApiServer } from '../src/billing-api/server.ts'
 import { openCobrixDatabase } from '../src/cobrix/db.ts'
+import { totalesResumen } from '../src/cobrix/repos.ts'
+import { ejecutarImportacion } from '../src/cobrix/sync/importacion.ts'
 import { createApp } from '../src/web/app.ts'
 
 process.env.SANDBOX_TODAY = '2026-10-13'
@@ -83,5 +85,15 @@ describe('entorno de la prueba', () => {
 		assert.match(await (await fetch(`${panelBase}/enunciado`)).text(), /Criterios de aceptación/)
 		assert.equal((await fetch(`${panelBase}/simulador`)).status, 404)
 		assert.doesNotMatch(await (await fetch(`${panelBase}/`)).text(), /Simulador del administrador/)
+	})
+
+	it('POST borrar datos importados vacía Cobrix y redirige', async () => {
+		await ejecutarImportacion(cobrixDb.db, false)
+		assert.ok(totalesResumen(cobrixDb.db).clientes > 0)
+		const res = await fetch(`${panelBase}/sincronizacion/borrar`, { method: 'POST', redirect: 'manual' })
+		assert.equal(res.status, 303)
+		assert.match(res.headers.get('location') ?? '', /\/sincronizacion\?msg=.*tone=info/)
+		assert.equal(totalesResumen(cobrixDb.db).clientes, 0)
+		assert.equal(totalesResumen(cobrixDb.db).contratos, 0)
 	})
 })

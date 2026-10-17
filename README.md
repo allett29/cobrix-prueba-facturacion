@@ -4,6 +4,16 @@ Integración de Cobrix con la API de un **administrador de facturas** ISP: impor
 
 **Enunciado:** [`docs/ENUNCIADO.md`](docs/ENUNCIADO.md) · **Decisiones:** [`docs/DECISIONES.md`](docs/DECISIONES.md)
 
+## Evaluador — ejecutar en Render (sin Node local)
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/allett29/cobrix-prueba-facturacion)
+
+1. Clic en el botón → [iniciar sesión en Render](https://dashboard.render.com/login) (GitHub).
+2. **Apply** en el blueprint (`render.yaml`).
+3. Abrir la URL **Live** del servicio.
+
+Guía detallada: [`docs/EVALUADOR.md`](docs/EVALUADOR.md) · Credenciales: `cobrix` / `cobrix-sandbox`.
+
 ## Requisitos
 
 Node **24** (usa `node:sqlite` y ejecuta `.ts` sin compilar). Con Node 20 verás `ERR_UNKNOWN_FILE_EXTENSION` o `ERR_UNKNOWN_BUILTIN_MODULE`.

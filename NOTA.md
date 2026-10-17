@@ -15,7 +15,13 @@ Asistentes (Cursor) para explorar el zip, alinear nombres con el enunciado, escr
 ## Extras entregados (además del enunciado)
 
 - **Panel UX:** paleta Cobrix, menú flotante, modales de confirmación/alerta, colibrí animado en cabecera.
-- **Despliegue Render:** [`render.yaml`](render.yaml) + guía [`docs/DEPLOY-RENDER.md`](docs/DEPLOY-RENDER.md) (un servicio Node 24, API ISP en loopback, disco opcional en `/var/data`).
+- **Despliegue Render:** [`render.yaml`](render.yaml) + [`docs/DEPLOY-RENDER.md`](docs/DEPLOY-RENDER.md) + [`docs/EVALUADOR.md`](docs/EVALUADOR.md) (botón *Deploy to Render* en README).
+
+## Demo pública para el evaluador
+
+- **Desplegar automáticamente:** [Deploy to Render](https://render.com/deploy?repo=https://github.com/allett29/cobrix-prueba-facturacion) (blueprint, sin configuración manual).
+- **URL en vivo (completar tras desplegar):** `https://________________.onrender.com`
+- **Acceso:** panel en `/` · proveedor `cobrix` / `cobrix-sandbox` · sandbox fecha `2026-10-13`.
 
 ## Omisiones / con más tiempo
 

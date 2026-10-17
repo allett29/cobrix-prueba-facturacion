@@ -18,9 +18,8 @@ Un solo **Web Service** ejecuta `npm start`: panel SSR (puerto `PORT` de Render)
 | `SIMULATOR_URL=http://127.0.0.1:4310` | URL que usa Cobrix al hablar con el ISP |
 | `COBRIX_MASTER_KEY` (generada) | Cifrado de contraseña del proveedor |
 | `COBRIX_SCHEDULER_INTERVAL_MS=30000` | Sondeo de corrida automática más acorde a producción |
-| Disco en `/var/data` | Persistir `cobrix.sqlite` entre reinicios |
 
-En **plan Free** el disco persistente puede no estar disponible; en ese caso quita el bloque `disk` de `render.yaml` y usa rutas por defecto en `data/` (estado Cobrix efímero entre redeploys; la base del ISP viaja en el repo).
+En **plan Free** (config actual) no hay disco persistente: `data/billing-api.sqlite` viaja en el repo y `cobrix.sqlite` se genera al arrancar. Para persistir Cobrix entre redeploys, ver comentario en `render.yaml` (disco de pago).
 
 ## Credenciales y prueba
 
