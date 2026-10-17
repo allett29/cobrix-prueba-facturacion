@@ -31,7 +31,7 @@ import { ejecutarActualizacionPagadas } from '../cobrix/sync/pagadas.ts'
 import type { Corrida, Proveedor, ProveedorEditable } from '../cobrix/types.ts'
 import { currentPeriod, today } from '../shared/dates.ts'
 
-import { CONTRACT_STATUS_TONE, CSS, date, dateTime, esc, html, layout, period, pill, raw, usd, type Raw, type Tone } from './layout.ts'
+import { CONTRACT_STATUS_TONE, CSS, date, dateTime, dialogConfirm, esc, html, layout, period, pill, raw, usd, type Raw, type Tone } from './layout.ts'
 
 export interface AppDeps {
 	readonly simulatorUrl: string
@@ -361,8 +361,8 @@ function syncPage(db: DatabaseSync): Raw {
 				<div class="body">
 					<p class="muted">Recorre todos los contratos y aplica estados, ventana, límite de recientes y topes de la configuración.</p>
 					<div class="actions">
-						<form method="post" action="/sincronizacion/importar/simular" class="inline"><button type="submit" class="btn">Simular importación</button></form>
-						<form method="post" action="/sincronizacion/importar" class="inline"><button type="submit" class="btn primary">Importar</button></form>
+						<form method="post" action="/sincronizacion/importar/simular" class="inline" ${dialogConfirm('¿Ejecutar simulación de importación? No se guardarán cambios reales.', 'info')}><button type="submit" class="btn">Simular importación</button></form>
+						<form method="post" action="/sincronizacion/importar" class="inline" ${dialogConfirm('Se importarán cuotas desde el ISP según la configuración actual.', 'warn')}><button type="submit" class="btn primary">Importar</button></form>
 					</div>
 				</div>
 			</section>
@@ -371,8 +371,8 @@ function syncPage(db: DatabaseSync): Raw {
 				<div class="body">
 					<p class="muted">Para cada factura abierta lee el libro del contrato. Solo marca pagada con saldo 0 y evidencia; los abonos parciales se informan.</p>
 					<div class="actions">
-						<form method="post" action="/sincronizacion/pagadas/simular" class="inline"><button type="submit" class="btn">Simular actualización</button></form>
-						<form method="post" action="/sincronizacion/pagadas" class="inline"><button type="submit" class="btn primary">Actualizar pagadas</button></form>
+						<form method="post" action="/sincronizacion/pagadas/simular" class="inline" ${dialogConfirm('¿Simular actualización de pagadas?', 'info')}><button type="submit" class="btn">Simular actualización</button></form>
+						<form method="post" action="/sincronizacion/pagadas" class="inline" ${dialogConfirm('Se marcarán pagadas las facturas que el ISP ya cobró.', 'warn')}><button type="submit" class="btn primary">Actualizar pagadas</button></form>
 					</div>
 				</div>
 			</section>
@@ -380,7 +380,7 @@ function syncPage(db: DatabaseSync): Raw {
 		<section class="card">
 			<header>
 				<h2>Corridas</h2>
-				<form method="post" action="/sincronizacion/borrar" class="inline" onsubmit="return confirm('¿Borrar todos los datos importados?')">
+				<form method="post" action="/sincronizacion/borrar" class="inline" ${dialogConfirm('¿Borrar todos los datos importados? Esta acción no se puede deshacer.', 'bad')}>
 					<button type="submit" class="btn">Borrar datos importados</button>
 				</form>
 			</header>
@@ -437,7 +437,7 @@ function configPage(db: DatabaseSync): Raw {
 				<p>Datos de la empresa y del administrador de facturas, con las mismas opciones del formulario «Configurar proveedor» de Cobrix.</p>
 			</div>
 		</div>
-		<form method="post" action="/configuracion/empresa">
+		<form method="post" action="/configuracion/empresa" ${dialogConfirm('¿Guardar datos de la empresa?', 'info')}>
 			<section class="card">
 				<header><h2>Empresa</h2></header>
 				<div class="body grid2">
@@ -452,7 +452,7 @@ function configPage(db: DatabaseSync): Raw {
 		<form method="post" action="/configuracion/proveedor">
 			<section class="card">
 				<header><h2>Administrador de facturas</h2>
-					<button type="submit" formaction="/configuracion/probar" class="btn">Probar conexión</button>
+					<button type="submit" formaction="/configuracion/probar" class="btn" ${dialogConfirm('¿Probar conexión con el administrador de facturas?', 'info')}>Probar conexión</button>
 				</header>
 				<div class="body grid2">
 					<label class="field">Nombre visible<input type="text" name="prov_nombre" required value="${proveedor.nombreVisible}" /></label>
@@ -493,7 +493,7 @@ function configPage(db: DatabaseSync): Raw {
 				</div>
 				<p class="note">Fijo para este proveedor, como en Cobrix: solo cuotas pendientes, vencimiento del proveedor y corrida automática opcional. Reloj lateral = Caracas; una ejecución por día.</p>
 				<div class="body actions">
-					<button type="submit" class="btn primary">Guardar proveedor</button>
+					<button type="submit" class="btn primary" ${dialogConfirm('¿Guardar configuración del proveedor?', 'warn')}>Guardar proveedor</button>
 					<span class="muted">Última modificación: ${dateTime(proveedor.actualizadoEn)}</span>
 				</div>
 			</section>
@@ -502,8 +502,8 @@ function configPage(db: DatabaseSync): Raw {
 
 function accionesResumen(): Raw {
 	return html`
-		<form method="post" action="/sincronizacion/importar" class="inline"><button type="submit" class="btn primary">Importar cuotas</button></form>
-		<form method="post" action="/sincronizacion/pagadas" class="inline"><button type="submit" class="btn">Actualizar pagadas</button></form>`
+		<form method="post" action="/sincronizacion/importar" class="inline" ${dialogConfirm('Se importarán cuotas desde el ISP según la configuración actual.', 'warn')}><button type="submit" class="btn primary">Importar cuotas</button></form>
+		<form method="post" action="/sincronizacion/pagadas" class="inline" ${dialogConfirm('Se marcarán pagadas las facturas que el ISP ya cobró.', 'warn')}><button type="submit" class="btn">Actualizar pagadas</button></form>`
 }
 
 function tablaCorridas(corridas: readonly Corrida[]): Raw {

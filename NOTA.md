@@ -12,12 +12,18 @@ Node 24 + TypeScript sin dependencias de runtime: API simulada y panel SSR en el
 
 Asistentes (Cursor) para explorar el zip, alinear nombres con el enunciado, escribir tests de aceptación y revisar casos borde de la API. Todo el código se validó con `npm test`, `npm run typecheck` y pruebas manuales del panel contra Swagger.
 
+## Extras entregados (además del enunciado)
+
+- **Panel UX:** paleta Cobrix, menú flotante, modales de confirmación/alerta, colibrí animado en cabecera.
+- **Despliegue Render:** [`render.yaml`](render.yaml) + guía [`docs/DEPLOY-RENDER.md`](docs/DEPLOY-RENDER.md) (un servicio Node 24, API ISP en loopback, disco opcional en `/var/data`).
+
 ## Omisiones / con más tiempo
 
 - Cola de trabajos y reintentos con backoff para corridas largas.
 - Observabilidad (métricas, trazas por corrida).
 - Tests E2E del panel con navegador.
 - UI con componentes (p. ej. React + Tailwind) si el producto creciera.
+- Exponer Swagger en URL pública o job aparte en Render.
 
 ## Punto diferencial
 
